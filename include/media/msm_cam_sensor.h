@@ -1,6 +1,10 @@
 #ifndef __LINUX_MSM_CAM_SENSOR_H
 #define __LINUX_MSM_CAM_SENSOR_H
 
+#ifdef CONFIG_LENOVO_DIR_CAMERA
+#include <media/msm_cam_sensor_lenovo.h>
+#else
+
 #include <uapi/media/msm_cam_sensor.h>
 
 #include <linux/compat.h>
@@ -258,6 +262,8 @@ struct msm_flash_cfg_data_t32 {
 
 #define VIDIOC_MSM_FLASH_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 13, struct msm_flash_cfg_data_t32)
+#endif
+
 #endif
 
 #endif
