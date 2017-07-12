@@ -1,6 +1,10 @@
 #ifndef __UAPI_MSMB_ISP__
 #define __UAPI_MSMB_ISP__
 
+#ifdef CONFIG_LENOVO_DIR_CAMERA
+#include <uapi/media/msmb_isp_lenovo.h>
+#else
+
 #include <linux/videodev2.h>
 
 #define MAX_PLANES_PER_STREAM 3
@@ -988,4 +992,14 @@ enum msm_isp_ioctl_cmd_code {
 #define VIDIOC_MSM_ISP_MAP_BUF_START_MULTI_PASS_FE \
 	_IOWR('V', MSM_ISP_MAP_BUF_START_MULTI_PASS_FE, \
 		struct msm_vfe_fetch_eng_multi_pass_start)
+
+#define VIDIOC_MSM_ISP_CFG_HW_STATE \
+	_IOWR('V', MSM_ISP_CFG_HW_STATE, \
+		struct msm_vfe_axi_stream_cfg_cmd)
+
+#define VIDIOC_MSM_ISP_AHB_CLK_CFG \
+	_IOWR('V', MSM_ISP_AHB_CLK_CFG, struct msm_isp_ahb_clk_cfg)
+
+#endif
+
 #endif /* __MSMB_ISP__ */
