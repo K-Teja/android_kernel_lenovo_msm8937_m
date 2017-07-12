@@ -1,6 +1,10 @@
 #ifndef __UAPI_LINUX_MSM_CAM_SENSOR_H
 #define __UAPI_LINUX_MSM_CAM_SENSOR_H
 
+#ifdef CONFIG_LENOVO_DIR_CAMERA
+#include <uapi/media/msm_cam_sensor_lenovo.h>
+#else
+
 #include <linux/v4l2-mediabus.h>
 #include <media/msm_camsensor_sdk.h>
 
@@ -584,6 +588,8 @@ struct sensor_init_cfg_data {
 
 #define VIDIOC_MSM_OIS_CFG_DOWNLOAD \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 14, struct msm_ois_cfg_download_data)
+
+#endif
 
 #endif
 
