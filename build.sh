@@ -18,12 +18,12 @@ KERNEL="Image.gz-dtb"
 # Hyper Kernel Details
 BASE_VER="hyper-n"
 VER="-$(date +"%Y-%m-%d"-%H%M)"
-K_VER="$BASE_VER$VER-mido"
+K_VER="$BASE_VER$VER-karate"
 
 # Vars
 export ARCH=arm64
 export SUBARCH=arm64
-export KBUILD_BUILD_USER="Tja"
+export KBUILD_BUILD_USER="Teja"
 export KBUILD_BUILD_HOST="HYPER™"
 export TZ="Asia/Calcutta"
 
@@ -31,7 +31,7 @@ export TZ="Asia/Calcutta"
 KERNEL_DIR=`pwd`
 RESOURCE_DIR="/home/tejachaitu96/karate"
 ANYKERNEL_DIR="$RESOURCE_DIR/hyper"
-TOOLCHAIN_DIR="/home/tejachaitu96/4.9/bin/aarch64-linux-android-"
+TOOLCHAIN_DIR="/home/tejachaitu96/4.9"
 REPACK_DIR="$ANYKERNEL_DIR"
 PATCH_DIR="$ANYKERNEL_DIR/patch"
 MODULES_DIR="$ANYKERNEL_DIR/modules"
@@ -78,7 +78,7 @@ DATE_START=$(date +"%s")
                 cd $KERNEL_DIR
 		make clean && make mrproper
 		echo "cleaned directory"
-		echo "Compiling Hyper-Kernel Using AOSP-4.9 Toolchain"
+		echo "Compiling Hyper-Kernel Using 4.9 Toolchain"
 
 echo -e "${restore}"
 
