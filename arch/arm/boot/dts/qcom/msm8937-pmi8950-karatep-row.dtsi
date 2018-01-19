@@ -11,7 +11,7 @@
  */
 
 #include "msm8937-pmi8950-karatep.dtsi"
-#include "../karate/msm8937-sar-sensor-karate-row.dtsi"
+#include "msm8937-sar-sensor-karate-row.dtsi"
 
  / {
         model = "karate plus row";

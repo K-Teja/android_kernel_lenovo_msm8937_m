@@ -156,15 +156,6 @@ dtb-$(CONFIG_ARCH_MDMCALIFORNIUM) += mdmcalifornium-sim.dtb \
 	mdmcalifornium-v1.1-nand-mtp.dtb \
 	mdmcalifornium-v1.1-nand-dualwifi-mtp.dtb
 
-ifeq ($(CONFIG_MACH_LENOVO_KARATE),y)
-dtb-$(CONFIG_ARCH_MSM8937) += \
-        msm8937-pmi8950-karate.dtb \
-        msm8937-pmi8950-karate-row.dtb
-else ifeq ($(CONFIG_MACH_LENOVO_KARATEP),y)
-dtb-$(CONFIG_ARCH_MSM8937) += \
-        msm8937-pmi8950-karatep.dtb \
-        msm8937-pmi8950-karatep-row.dtb
-else
 dtb-$(CONFIG_ARCH_MSM8937) += msm8937-rumi.dtb \
 	msm8937-pmi8950-cdp.dtb \
 	msm8937-pmi8937-cdp.dtb \
@@ -180,8 +171,11 @@ dtb-$(CONFIG_ARCH_MSM8937) += msm8937-rumi.dtb \
 	apq8037-pmi8950-cdp.dtb \
 	apq8037-pmi8937-cdp.dtb \
 	apq8037-pmi8950-mtp.dtb \
-	apq8037-pmi8937-mtp.dtb
-endif
+	apq8037-pmi8937-mtp.dtb \
+	msm8937-pmi8950-karate.dtb \
+	msm8937-pmi8950-karatep.dtb \
+	msm8937-pmi8950-karate-row.dtb \
+	msm8937-pmi8950-karatep-row.dtb
 
 dtb-$(CONFIG_ARCH_MSM8917) += msm8917-rumi.dtb \
 	apq8017-pmi8937-cdp.dtb \
@@ -233,20 +227,7 @@ dtb-$(CONFIG_ARCH_MSM8953) += msm8953-sim.dtb \
 	apq8053-ext-audio-mtp.dtb \
 	msm8953-cdp-1200p.dtb \
 	msm8953-iot-mtp.dtb \
-	apq8053-iot-mtp.dtb \
-	msm8953-pmi8940-cdp.dtb \
-	msm8953-pmi8940-mtp.dtb \
-	msm8953-pmi8937-cdp.dtb \
-	msm8953-pmi8937-mtp.dtb \
-	msm8953-pmi8940-ext-codec-mtp.dtb \
-	msm8953-pmi8937-ext-codec-mtp.dtb
-
-dtb-$(CONFIG_ARCH_SDM450) += sdm450-rcm.dtb \
-	sdm450-cdp.dtb \
-	sdm450-mtp.dtb \
-	sdm450-qrd.dtb \
-	sdm450-pmi8940-mtp.dtb \
-	sdm450-pmi8937-mtp.dtb
+	apq8053-iot-mtp.dtb
 
 dtb-$(CONFIG_ARCH_MDM9607) += mdm9607-rumi.dtb \
 	mdm9607-cdp.dtb \

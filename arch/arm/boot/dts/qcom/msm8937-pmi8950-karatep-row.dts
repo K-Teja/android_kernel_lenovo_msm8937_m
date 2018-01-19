@@ -12,7 +12,7 @@
 
 /dts-v1/;
 
-#include "karatep/msm8937-pmi8950-karatep-row.dtsi"
+#include "msm8937-pmi8950-karatep-row.dtsi"
 
 / {
 	qcom,board-id= <0xb 0x4>;
@@ -22,8 +22,8 @@
 / {
 	qrd_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
-		#include "karatep/batterydata-bl270-karatep-4000mah.dtsi"
-		#include "karatep/batterydata-bl270sunwoda-karatep-4100mah.dtsi"
+		#include "2451137_Lenovo_BL270_4000mAh_averaged_MasterSlave_Jun20th2016_PMI8952GUI20016.dtsi"
+		#include "2541070_Lenovo_BL270sunwoda_4100mAh_averaged_MasterSlave_Aug22nd2016_PMI8952GUI20016.dtsi"
 	};
 };
 

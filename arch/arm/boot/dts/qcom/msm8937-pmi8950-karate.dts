@@ -12,7 +12,7 @@
 
 /dts-v1/;
 
-#include "karate/msm8937-pmi8950-karate.dtsi"
+#include "msm8937-pmi8950-karate.dtsi"
 
 / {
 	qcom,board-id= <0xb 0x1>;
@@ -22,7 +22,7 @@
 / {
 	qrd_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <5>;
-		#include "karate/batterydata-bl267-karate-3080mah.dtsi"
+		#include "2444194_Lenovo_BL267_3080mAh_averaged_MasterSlave_Jun6th2016_PMI8952GUI20016.dtsi"
 	};
 };
 
@@ -40,16 +40,13 @@
 	qcom,battery-data = <&qrd_batterydata>;
 	qcom,bad-battery-detection-enable;
 	qcom,hold-soc-while-full;
-        qcom,resume-soc = <99>;
 	qcom,thermal-coefficients = [DA 86 F0 50 08 3C];
 	qcom,fg-cutoff-voltage-mv = <3300>;
-        qcom,vbat-estimate-diff-mv = <100>;
-
 };
-
 &usb_otg {
        qcom,usbin-vadc = <&pmi8950_vadc>;
 };
+
 
 &int_codec {
 	qcom,model = "msm8937-karate-snd-card";
