@@ -13,7 +13,7 @@ clear
 # Resources
 THREAD="-j$(grep -c ^processor /proc/cpuinfo)"
 DEFCONFIG="karate_defconfig"
-KERNEL="Image.gz-dtb"
+KERNEL="zImage-dtb"
 
 # Hyper Kernel Details
 BASE_VER="hyper-n"
@@ -21,22 +21,22 @@ VER="-$(date +"%Y-%m-%d"-%H%M)"
 K_VER="$BASE_VER$VER-karate"
 
 # Vars
-export ARCH=arm64
-export SUBARCH=arm64
+export ARCH=arm
+export SUBARCH=arm
 export KBUILD_BUILD_USER="Teja"
 export KBUILD_BUILD_HOST="HYPER™"
 export TZ="Asia/Calcutta"
 
 # Paths
 KERNEL_DIR=`pwd`
-RESOURCE_DIR="/home/tejachaitu96/v3.18.84"
+RESOURCE_DIR="/home/tejachaitu96/arm+64"
 ANYKERNEL_DIR="$RESOURCE_DIR/hyper"
-TOOLCHAIN_DIR="/home/tejachaitu96/4.9"
+TOOLCHAIN_DIR="/home/tejachaitu96/4.8"
 REPACK_DIR="$ANYKERNEL_DIR"
 PATCH_DIR="$ANYKERNEL_DIR/patch"
 MODULES_DIR="$ANYKERNEL_DIR/modules"
 ZIP_MOVE="$RESOURCE_DIR/kernel_out"
-ZIMAGE_DIR="$KERNEL_DIR/arch/arm64/boot"
+ZIMAGE_DIR="$KERNEL_DIR/arch/arm/boot"
 
 
 # Functions
@@ -68,9 +68,9 @@ function make_zip {
 
 DATE_START=$(date +"%s")
 
-		export CROSS_COMPILE=$TOOLCHAIN_DIR/bin/aarch64-linux-android-
+		export CROSS_COMPILE=$TOOLCHAIN_DIR/bin/arm-eabi-
 		export LD_LIBRARY_PATH=$TOOLCHAIN_DIR/lib/
-                STRIP=$TOOLCHAIN_DIR/bin/aarch64-linux-android-strip
+                STRIP=$TOOLCHAIN_DIR/bin/arm-eabi-strip
 		rm -rf $MODULES_DIR/*
 		rm -rf $ZIP_MOVE/*
 		cd $ANYKERNEL_DIR
@@ -78,7 +78,7 @@ DATE_START=$(date +"%s")
                 cd $KERNEL_DIR
 		make clean && make mrproper
 		echo "cleaned directory"
-		echo "Compiling Hyper-Kernel Using 4.9 Toolchain"
+		echo "Compiling Hyper-Kernel Using 4.8 Toolchain"
 
 echo -e "${restore}"
 
