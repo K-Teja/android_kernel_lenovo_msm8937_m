@@ -725,9 +725,6 @@ struct mdss_panel_info {
 	struct mdss_panel_debugfs_info *debugfs_info;
 	struct panel_param *param[PARAM_ID_NUM];
 	struct mutex param_lock;
-
-	/* HDR properties of display panel*/
-	struct mdss_panel_hdr_properties hdr_properties;
 };
 
 struct mdss_panel_timing {
@@ -790,14 +787,10 @@ struct mdss_panel_data {
 
 	struct device_node *cfg_np; /* NULL if config node is not present */
 	struct mdss_panel_data *next;
-
-	int panel_te_gpio;
-	struct completion te_done;
 };
 
 struct mdss_panel_debugfs_info {
 	struct dentry *root;
-	struct dentry *parent;
 	struct mdss_panel_info panel_info;
 	u32 override_flag;
 	struct mdss_panel_debugfs_info *next;
