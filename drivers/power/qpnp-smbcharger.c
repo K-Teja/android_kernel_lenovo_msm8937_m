@@ -299,7 +299,6 @@ struct smbchg_chip {
 	struct votable			*hw_aicl_rerun_disable_votable;
 	struct votable			*hw_aicl_rerun_enable_indirect_votable;
 	struct votable			*aicl_deglitch_short_votable;
-	struct votable			*hvdcp_enable_votable;
 
 /*smoothed_soc*/
 	struct soc_param        soc_param;
@@ -468,7 +467,6 @@ enum aicl_short_deglitch_voters {
 	HVDCP_SHORT_DEGLITCH_VOTER,
 	NUM_HW_SHORT_DEGLITCH_VOTERS,
 };
-static int smbchg_debug_mask;
 static int get_prop_batt_voltage_now(struct smbchg_chip *chip);
 static int get_prop_batt_capacity(struct smbchg_chip *chip);
 static int get_current_time(unsigned long *now_tm_sec);
@@ -4742,7 +4740,8 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 	 * and set type after the vote
 	 */
 	if (type == POWER_SUPPLY_TYPE_UNKNOWN) {
-		rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, true, 0);
+		rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, false,
+				current_limit_ma);
 		if (rc < 0)
 			pr_err("Couldn't remove ICL vote rc=%d\n", rc);
 
@@ -4943,7 +4942,6 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 		chip->typec_current_ma = 0;
 	/* cancel/wait for hvdcp pending work if any */
 	cancel_delayed_work_sync(&chip->hvdcp_det_work);
-	smbchg_relax(chip, PM_DETECT_HVDCP);
 	smbchg_change_usb_supply_type(chip, POWER_SUPPLY_TYPE_UNKNOWN);
 	if (!chip->skip_usb_notification) {
 		pr_smb(PR_MISC, "setting usb psy present = %d\n",
@@ -5666,63 +5664,49 @@ out:
 #define APSD_RERUN		BIT(0)
 static int rerun_apsd(struct smbchg_chip *chip)
 {
-	int rc = 0;
+	int rc;
 
-	chip->hvdcp_3_det_ignore_uv = true;
+	reinit_completion(&chip->src_det_raised);
+	reinit_completion(&chip->usbin_uv_lowered);
+	reinit_completion(&chip->src_det_lowered);
+	reinit_completion(&chip->usbin_uv_raised);
 
-	if (chip->schg_version == QPNP_SCHG_LITE) {
-		pr_smb(PR_STATUS, "Re-running APSD\n");
-		reinit_completion(&chip->src_det_raised);
-		reinit_completion(&chip->usbin_uv_lowered);
-		reinit_completion(&chip->src_det_lowered);
-		reinit_completion(&chip->usbin_uv_raised);
-
-		/* re-run APSD */
-		rc = smbchg_masked_write(chip,
-				chip->usb_chgpth_base + USB_CMD_APSD,
-				APSD_RERUN, APSD_RERUN);
-		if (rc) {
-			pr_err("Couldn't re-run APSD rc=%d\n", rc);
-			goto out;
-		}
-
-		pr_smb(PR_MISC, "Waiting on rising usbin uv\n");
-		rc = wait_for_usbin_uv(chip, true);
-		if (rc < 0) {
-			pr_err("wait for usbin uv failed rc = %d\n", rc);
-			goto out;
-		}
-
-		pr_smb(PR_MISC, "Waiting on falling src det\n");
-		rc = wait_for_src_detect(chip, false);
-		if (rc < 0) {
-			pr_err("wait for src detect failed rc = %d\n", rc);
-			goto out;
-		}
-
-		pr_smb(PR_MISC, "Waiting on falling usbin uv\n");
-		rc = wait_for_usbin_uv(chip, false);
-		if (rc < 0) {
-			pr_err("wait for usbin uv failed rc = %d\n", rc);
-			goto out;
-		}
-
-		pr_smb(PR_MISC, "Waiting on rising src det\n");
-		rc = wait_for_src_detect(chip, true);
-		if (rc < 0) {
-			pr_err("wait for src detect failed rc = %d\n", rc);
-			goto out;
-		}
-	} else {
-		pr_smb(PR_STATUS, "Faking Removal\n");
-		rc = fake_insertion_removal(chip, false);
-		msleep(500);
-		pr_smb(PR_STATUS, "Faking Insertion\n");
-		rc = fake_insertion_removal(chip, true);
+	/* re-run APSD */
+	rc = smbchg_masked_write(chip, chip->usb_chgpth_base + USB_CMD_APSD,
+					APSD_RERUN, APSD_RERUN);
+	if (rc) {
+		pr_err("Couldn't re-run APSD rc=%d\n", rc);
+		return rc;
 	}
 
-out:
-	chip->hvdcp_3_det_ignore_uv = false;
+	pr_smb(PR_MISC, "Waiting on rising usbin uv\n");
+	rc = wait_for_usbin_uv(chip, true);
+	if (rc < 0) {
+		pr_err("wait for usbin uv failed rc = %d\n", rc);
+		return rc;
+	}
+
+	pr_smb(PR_MISC, "Waiting on falling src det\n");
+	rc = wait_for_src_detect(chip, false);
+	if (rc < 0) {
+		pr_err("wait for src detect failed rc = %d\n", rc);
+		return rc;
+	}
+
+	pr_smb(PR_MISC, "Waiting on falling usbin uv\n");
+	rc = wait_for_usbin_uv(chip, false);
+	if (rc < 0) {
+		pr_err("wait for usbin uv failed rc = %d\n", rc);
+		return rc;
+	}
+
+	pr_smb(PR_MISC, "Waiting on rising src det\n");
+	rc = wait_for_src_detect(chip, true);
+	if (rc < 0) {
+		pr_err("wait for src detect failed rc = %d\n", rc);
+		return rc;
+	}
+
 	return rc;
 }
 
@@ -5799,12 +5783,16 @@ static int smbchg_prepare_for_pulsing_lite(struct smbchg_chip *chip)
 	smbchg_sec_masked_write(chip, chip->usb_chgpth_base + USB_AICL_CFG,
 			AICL_EN_BIT, 0);
 
+	chip->hvdcp_3_det_ignore_uv = true;
+
 	/* re-run APSD */
 	rc = rerun_apsd(chip);
 	if (rc) {
 		pr_err("APSD rerun failed\n");
 		goto out;
 	}
+
+	chip->hvdcp_3_det_ignore_uv = false;
 
 	pr_smb(PR_MISC, "Enable AICL\n");
 	smbchg_sec_masked_write(chip, chip->usb_chgpth_base + USB_AICL_CFG,
@@ -6078,7 +6066,6 @@ static enum power_supply_property smbchg_battery_properties[] = {
 	POWER_SUPPLY_PROP_RERUN_AICL,
 	POWER_SUPPLY_PROP_RESTRICTED_CHARGING,
 	POWER_SUPPLY_PROP_ALLOW_HVDCP3,
-	POWER_SUPPLY_PROP_MAX_PULSE_ALLOWED,
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
@@ -6304,11 +6291,10 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ALLOW_HVDCP3:
 		val->intval = chip->allow_hvdcp3_detection;
 		break;
-	case POWER_SUPPLY_PROP_MAX_PULSE_ALLOWED:
-		val->intval = chip->max_pulse_allowed;
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
 		val->intval = g_call_state;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_FULL:
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 		batt_node = of_parse_phandle(node, "qcom,battery-data", 0);
 		if (!batt_node) {
@@ -8571,18 +8557,20 @@ static void rerun_hvdcp_det_if_necessary(struct smbchg_chip *chip)
 			pr_err("Couldn't vote for 300mA for suspend wa, going ahead rc=%d\n",
 					rc);
 
-		rc = rerun_apsd(chip);
-		if (rc)
-			pr_err("APSD rerun failed rc=%d\n", rc);
+		pr_smb(PR_STATUS, "Faking Removal\n");
+		fake_insertion_removal(chip, false);
+		msleep(500);
+		pr_smb(PR_STATUS, "Faking Insertion\n");
+		fake_insertion_removal(chip, true);
 
 		read_usb_type(chip, &usb_type_name, &usb_supply_type);
 		if (usb_supply_type != POWER_SUPPLY_TYPE_USB_DCP) {
 			msleep(500);
-			pr_smb(PR_STATUS, "Rerun APSD as type !=DCP\n");
-
-			rc = rerun_apsd(chip);
-			if (rc)
-				pr_err("APSD rerun failed rc=%d\n", rc);
+			pr_smb(PR_STATUS, "Fake Removal again as type!=DCP\n");
+			fake_insertion_removal(chip, false);
+			msleep(500);
+			pr_smb(PR_STATUS, "Fake Insert again as type!=DCP\n");
+			fake_insertion_removal(chip, true);
 		}
 
 		rc = vote(chip->usb_icl_votable,
@@ -8590,14 +8578,6 @@ static void rerun_hvdcp_det_if_necessary(struct smbchg_chip *chip)
 		if (rc < 0)
 			pr_err("Couldn't vote for 0 for suspend wa, going ahead rc=%d\n",
 					rc);
-
-		/* Schedule work for HVDCP detection */
-		if (!chip->hvdcp_not_supported) {
-			cancel_delayed_work_sync(&chip->hvdcp_det_work);
-			smbchg_stay_awake(chip, PM_DETECT_HVDCP);
-			schedule_delayed_work(&chip->hvdcp_det_work,
-					msecs_to_jiffies(HVDCP_NOTIFY_MS));
-		}
 	}
 }
 
@@ -8724,16 +8704,11 @@ static int smbchg_probe(struct spmi_device *spmi)
 	if (IS_ERR(chip->aicl_deglitch_short_votable))
 		return PTR_ERR(chip->aicl_deglitch_short_votable);
 
-	chip->hvdcp_enable_votable = create_votable(&spmi->dev,
-			"SMBCHG: hvdcp_enable",
-			VOTE_MIN, NUM_HVDCP_VOTERS, 1,
-			smbchg_hvdcp_enable_cb);
-	if (IS_ERR(chip->hvdcp_enable_votable))
-		return PTR_ERR(chip->hvdcp_enable_votable);
 	wake_lock_init(&chip->wakelock, WAKE_LOCK_SUSPEND,
 						"smbchg_task_wakelock");
 	wake_lock_init(&chip->batt_hot_wake_lock, WAKE_LOCK_SUSPEND,
 						"batt_wakelock");
+
 
 	INIT_WORK(&chip->usb_set_online_work, smbchg_usb_update_online_work);
 	INIT_DELAYED_WORK(&chip->parallel_en_work,
@@ -8885,7 +8860,6 @@ static int smbchg_probe(struct spmi_device *spmi)
 
 	rerun_hvdcp_det_if_necessary(chip);
 
-	update_usb_status(chip, is_usb_present(chip), false);
 	tmp_chip = chip;
 	dump_regs(chip);
 	create_debugfs_entries(chip);
