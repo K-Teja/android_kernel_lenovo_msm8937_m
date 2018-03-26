@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -213,14 +213,6 @@ static VOS_STATUS hdd_parse_ese_beacon_req(tANI_U8 *pValue,
 //wait time for beacon miss rate.
 #define BCN_MISS_RATE_TIME 500
 
-/*
- * Android DRIVER command structures
- */
-struct android_wifi_reassoc_params {
-	unsigned char bssid[18];
-	int channel;
-};
-
 static vos_wake_lock_t wlan_wake_lock;
 
 /* set when SSR is needed after unload */
@@ -271,8 +263,9 @@ static VOS_STATUS hdd_parse_channellist(tANI_U8 *pValue, tANI_U8 *pChannelList, 
 static VOS_STATUS hdd_parse_send_action_frame_data(tANI_U8 *pValue, tANI_U8 *pTargetApBssid,
                               tANI_U8 *pChannel, tANI_U8 *pDwellTime,
                               tANI_U8 **pBuf, tANI_U8 *pBufLen);
-static int hdd_parse_reassoc_command_v1_data(const tANI_U8 *pValue,
-				tANI_U8 *pTargetApBssid, tANI_U8 *pChannel);
+static VOS_STATUS hdd_parse_reassoc_command_data(tANI_U8 *pValue,
+                                                 tANI_U8 *pTargetApBssid,
+                                                 tANI_U8 *pChannel);
 #endif
 
 /* Store WLAN driver info in a global variable such that crash debugger
@@ -799,7 +792,7 @@ static int hdd_parse_setrmcenable_command(tANI_U8 *pValue, tANI_U8 *pRmcEnable)
 
     /* getting the first argument which enables or disables RMC
          * for input IP v4 address*/
-    sscanf(inPtr, "%32s ", buf);
+    sscanf(inPtr, "%31s ", buf);
     v = kstrtos32(buf, 10, &tempInt);
     if ( v < 0)
     {
@@ -848,7 +841,7 @@ static int hdd_parse_setrmcactionperiod_command(tANI_U8 *pValue,
 
     /* getting the first argument which enables or disables RMC
          * for input IP v4 address*/
-    sscanf(inPtr, "%32s ", buf);
+    sscanf(inPtr, "%31s ", buf);
     v = kstrtos32(buf, 10, &tempInt);
     if ( v < 0)
     {
@@ -906,7 +899,7 @@ static int hdd_parse_setrmcrate_command(tANI_U8 *pValue,
     /*
      * getting the first argument which sets multicast rate.
      */
-    sscanf(inPtr, "%32s ", buf);
+    sscanf(inPtr, "%31s ", buf);
     v = kstrtos32(buf, 10, &tempInt);
     if ( v < 0)
         {
@@ -1745,7 +1738,7 @@ static void hdd_batch_scan_result_ind_callback
     if ((NULL == pBatchScanRsp) || (NULL == pReq))
     {
          VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-            "%s: pBatchScanRsp is %p pReq %p", __func__, pBatchScanRsp, pReq);
+            "%s: pBatchScanRsp is %pK pReq %pK", __func__, pBatchScanRsp, pReq);
             isLastAp = TRUE;
          goto done;
     }
@@ -1769,7 +1762,7 @@ static void hdd_batch_scan_result_ind_callback
         if (NULL == pScanList)
         {
             VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-              "%s: pScanList is %p", __func__, pScanList);
+              "%s: pScanList is %pK", __func__, pScanList);
             isLastAp = TRUE;
            goto done;
         }
@@ -1796,7 +1789,7 @@ static void hdd_batch_scan_result_ind_callback
             if (NULL == pApMetaInfo)
             {
                 VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                  "%s: pApMetaInfo is %p", __func__, pApMetaInfo);
+                  "%s: pApMetaInfo is %pK", __func__, pApMetaInfo);
                 isLastAp = TRUE;
                 goto done;
             }
@@ -2479,184 +2472,6 @@ exit:
 
 #endif/*End of FEATURE_WLAN_BATCH_SCAN*/
 
-#if  defined(WLAN_FEATURE_VOWIFI_11R) || defined(FEATURE_WLAN_ESE) || defined(FEATURE_WLAN_LFR)
-/**
- * hdd_assign_handoff_src_reassoc - Set handoff source as REASSOC
- *                                  to Handoff request
- * @handoffInfo: Pointer to Handoff request
- * @src: enum of handoff_src
- * Return: None
- */
-#ifndef QCA_WIFI_ISOC
-static inline void hdd_assign_handoff_src_reassoc(tCsrHandoffRequest
-					*handoffInfo, handoff_src src)
-{
-	handoffInfo->src = src;
-}
-#else
-static inline void hdd_assign_handoff_src_reassoc(tCsrHandoffRequest
-					*handoffInfo, handoff_src src)
-{
-}
-#endif
-
-/**
- * hdd_reassoc() - perform a user space-directed reassoc
- *
- * @pAdapter: Adapter upon which the command was received
- * @bssid: BSSID with which to reassociate
- * @channel: channel upon which to reassociate
- * @src:      The source for the trigger of this action
- *
- * Return: 0 for success non-zero for failure
- */
-#ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
-int hdd_reassoc(hdd_adapter_t *pAdapter, const tANI_U8 *bssid,
-			const tANI_U8 channel, const handoff_src src)
-{
-	hdd_station_ctx_t *pHddStaCtx;
-	tCsrHandoffRequest handoffInfo;
-	hdd_context_t *pHddCtx = NULL;
-	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
-
-	pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
-
-	/* if not associated, no need to proceed with reassoc */
-	if (eConnectionState_Associated != pHddStaCtx->conn_info.connState) {
-		hddLog(LOG1, FL("Not associated"));
-		return -EINVAL;
-	}
-
-	/* if the target bssid is same as currently associated AP,
-	   then no need to proceed with reassoc */
-	if (!memcmp(bssid, pHddStaCtx->conn_info.bssId, sizeof(tSirMacAddr))) {
-		hddLog(LOG1, FL("Reassoc BSSID is same as currently associated AP bssid"));
-		return -EINVAL;
-	}
-
-	/* Check channel number is a valid channel number */
-	if (VOS_STATUS_SUCCESS !=
-		wlan_hdd_validate_operation_channel(pAdapter, channel)) {
-		hddLog(LOGE, FL("Invalid Channel %d"), channel);
-		return -EINVAL;
-	}
-
-	/* Proceed with reassoc */
-	handoffInfo.channel = channel;
-	hdd_assign_handoff_src_reassoc(&handoffInfo, src);
-	memcpy(handoffInfo.bssid, bssid, sizeof(tSirMacAddr));
-	sme_HandoffRequest(pHddCtx->hHal, &handoffInfo);
-	return 0;
-}
-#else
-int hdd_reassoc(hdd_adapter_t *pAdapter, const tANI_U8 *bssid,
-			const tANI_U8 channel, const handoff_src src)
-{
-	return -EPERM;
-}
-#endif
-
-/**
- * hdd_parse_reassoc_v1() - parse version 1 of the REASSOC command
- *     This function parses the v1 REASSOC command with the format
- *     REASSOC xx:xx:xx:xx:xx:xx CH where "xx:xx:xx:xx:xx:xx" is the
- *     Hex-ASCII representation of the BSSID and CH is the ASCII
- *     representation of the channel. For example
- *     REASSOC 00:0a:0b:11:22:33 48
- *
- * @pAdapter: Adapter upon which the command was received
- * @command: ASCII text command that was received
- *
- * Return: 0 for success non-zero for failure
- */
-static int
-hdd_parse_reassoc_v1(hdd_adapter_t *pAdapter, const char *command)
-{
-	tANI_U8 channel = 0;
-	tSirMacAddr bssid;
-	int ret;
-
-	ret = hdd_parse_reassoc_command_v1_data(command, bssid, &channel);
-	if (ret)
-		hddLog(LOGE, FL("Failed to parse reassoc command data"));
-	else
-		ret = hdd_reassoc(pAdapter, bssid, channel, REASSOC);
-
-	return ret;
-}
-
-/**
- * hdd_parse_reassoc_v2() - parse version 2 of the REASSOC command
- *     This function parses the v2 REASSOC command with the format
- *     REASSOC <android_wifi_reassoc_params>
- *
- * @pAdapter: Adapter upon which the command was received
- * @command: command that was received, ASCII command followed
- *                    by binary data
- *
- * Return: 0 for success non-zero for failure
- */
-static int
-hdd_parse_reassoc_v2(hdd_adapter_t *pAdapter, const char *command)
-{
-	struct android_wifi_reassoc_params params;
-	tSirMacAddr bssid;
-	int ret;
-
-	/* The params are located after "REASSOC " */
-	memcpy(&params, command + 8, sizeof(params));
-
-	if (!mac_pton(params.bssid, (u8 *)&bssid)) {
-		hddLog(LOGE, FL("MAC address parsing failed"));
-		ret = -EINVAL;
-	} else {
-		ret = hdd_reassoc(pAdapter, bssid, params.channel, REASSOC);
-	}
-	return ret;
-}
-
-/**
- * hdd_parse_reassoc() - parse the REASSOC command
- *    There are two different versions of the REASSOC command.Version 1
- *    of the command contains a parameter list that is ASCII characters
- *    whereas version 2 contains a combination of ASCII and binary
- *    payload.  Determine if a version 1 or a version 2 command is being
- *    parsed by examining the parameters, and then dispatch the parser
- *    that is appropriate for the command.
- *
- *  @pAdapter: Adapter upon which the command was received
- *  @command: command that was received
- *
- *  Return: 0 for success non-zero for failure
- */
-static int
-hdd_parse_reassoc(hdd_adapter_t *pAdapter, const char *command)
-{
-	int ret;
-
-	/*
-	 * both versions start with "REASSOC"
-	 * v1 has a bssid and channel # as an ASCII string
-	 *    REASSOC xx:xx:xx:xx:xx:xx CH
-	 * v2 has a C struct
-	 *    REASSOC <binary c struct>
-	 *
-	 * The first field in the v2 struct is also the bssid in ASCII.
-	 * But in the case of a v2 message the BSSID is NUL-terminated.
-	 * Hence we can peek at that offset to see if this is V1 or V2
-	 * REASSOC xx:xx:xx:xx:xx:xx*
-	 *           1111111111222222
-	 * 01234567890123456789012345
-	 */
-	if (command[25])
-		ret = hdd_parse_reassoc_v1(pAdapter, command);
-	else
-		ret = hdd_parse_reassoc_v2(pAdapter, command);
-
-	return ret;
-}
-#endif  /* WLAN_FEATURE_VOWIFI_11R || FEATURE_WLAN_ESE FEATURE_WLAN_LFR */
-
 static void getBcnMissRateCB(VOS_STATUS status, int bcnMissRate, void *data)
 {
     bcnMissRateContext_t *pCBCtx;
@@ -2809,6 +2624,14 @@ static int hdd_get_dwell_time(hdd_config_t *pCfg, tANI_U8 *command, char *extra,
     return ret;
 }
 
+int hdd_drv_cmd_validate(tANI_U8 *command, int len)
+{
+	if (command[len] != ' ')
+		return -EINVAL;
+
+	return 0;
+}
+
 static int hdd_set_dwell_time(hdd_adapter_t *pAdapter, tANI_U8 *command)
 {
     tHalHandle hHal;
@@ -2831,6 +2654,9 @@ static int hdd_set_dwell_time(hdd_adapter_t *pAdapter, tANI_U8 *command)
 
     if (strncmp(command, "SETDWELLTIME ACTIVE MAX", 23) == 0 )
     {
+        if (hdd_drv_cmd_validate(command, 23))
+            return -EINVAL;
+
         value = value + 24;
         temp = kstrtou32(value, 10, &val);
         if (temp != 0 || val < CFG_ACTIVE_MAX_CHANNEL_TIME_MIN ||
@@ -2847,6 +2673,9 @@ static int hdd_set_dwell_time(hdd_adapter_t *pAdapter, tANI_U8 *command)
     }
     else if (strncmp(command, "SETDWELLTIME ACTIVE MIN", 23) == 0)
     {
+        if (hdd_drv_cmd_validate(command, 23))
+            return -EINVAL;
+
         value = value + 24;
         temp = kstrtou32(value, 10, &val);
         if (temp !=0 || val < CFG_ACTIVE_MIN_CHANNEL_TIME_MIN  ||
@@ -2863,6 +2692,9 @@ static int hdd_set_dwell_time(hdd_adapter_t *pAdapter, tANI_U8 *command)
     }
     else if (strncmp(command, "SETDWELLTIME PASSIVE MAX", 24) == 0)
     {
+        if (hdd_drv_cmd_validate(command, 24))
+            return -EINVAL;
+
         value = value + 25;
         temp = kstrtou32(value, 10, &val);
         if (temp != 0 || val < CFG_PASSIVE_MAX_CHANNEL_TIME_MIN ||
@@ -2879,6 +2711,9 @@ static int hdd_set_dwell_time(hdd_adapter_t *pAdapter, tANI_U8 *command)
     }
     else if (strncmp(command, "SETDWELLTIME PASSIVE MIN", 24) == 0)
     {
+        if (hdd_drv_cmd_validate(command, 24))
+            return -EINVAL;
+
         value = value + 25;
         temp = kstrtou32(value, 10, &val);
         if (temp != 0 || val < CFG_PASSIVE_MIN_CHANNEL_TIME_MIN ||
@@ -2895,6 +2730,9 @@ static int hdd_set_dwell_time(hdd_adapter_t *pAdapter, tANI_U8 *command)
     }
     else if (strncmp(command, "SETDWELLTIME", 12) == 0)
     {
+        if (hdd_drv_cmd_validate(command, 12))
+            return -EINVAL;
+
         value = value + 13;
         temp = kstrtou32(value, 10, &val);
         if (temp != 0 || val < CFG_ACTIVE_MAX_CHANNEL_TIME_MIN ||
@@ -2937,8 +2775,7 @@ static int hdd_cmd_setFccChannel(hdd_context_t *pHddCtx, tANI_U8 *cmd,
         return -EINVAL;
     }
 
-    status = sme_handleSetFccChannel(pHddCtx->hHal, fcc_constraint,
-                                     pHddCtx->scan_info.mScanPending);
+    status = sme_handleSetFccChannel(pHddCtx->hHal, fcc_constraint);
     if (status != eHAL_STATUS_SUCCESS)
         ret = -EPERM;
 
@@ -2992,132 +2829,6 @@ int hdd_enable_disable_ca_event(hdd_context_t *pHddCtx, tANI_U8* command, tANI_U
 exit:
    return ret;
 }
-
-/**
- * wlan_hdd_fastreassoc_handoff_request() - Post Handoff request to SME
- * @pHddCtx: Pointer to the HDD context
- * @channel: channel to reassociate
- * @targetApBssid: Target AP/BSSID to reassociate
- *
- * Return: None
- */
-#if defined(WLAN_FEATURE_ROAM_SCAN_OFFLOAD) && !defined(QCA_WIFI_ISOC)
-static void wlan_hdd_fastreassoc_handoff_request(hdd_context_t *pHddCtx,
-				uint8_t channel, tSirMacAddr targetApBssid)
-{
-	tCsrHandoffRequest handoffInfo;
-	handoffInfo.channel = channel;
-	handoffInfo.src = FASTREASSOC;
-	vos_mem_copy(handoffInfo.bssid, targetApBssid, sizeof(tSirMacAddr));
-	sme_HandoffRequest(pHddCtx->hHal, &handoffInfo);
-}
-#else
-static void wlan_hdd_fastreassoc_handoff_request(hdd_context_t *pHddCtx,
-				uint8_t channel, tSirMacAddr targetApBssid)
-{
-}
-#endif
-
-/**
- * csr_fastroam_neighbor_ap_event() - Function to trigger scan/roam
- * @pAdapter: Pointer to HDD adapter
- * @channel: Channel to scan/roam
- * @targetApBssid: BSSID to roam
- *
- * Return: None
- */
-#ifdef QCA_WIFI_ISOC
-static void csr_fastroam_neighbor_ap_event(hdd_adapter_t *pAdapter,
-				uint8_t channel, tSirMacAddr targetApBssid)
-{
-	smeIssueFastRoamNeighborAPEvent(WLAN_HDD_GET_HAL_CTX(pAdapter),
-			&targetApBssid[0], eSME_ROAM_TRIGGER_SCAN, channel);
-}
-#else
-static void csr_fastroam_neighbor_ap_event(hdd_adapter_t *pAdapter,
-				uint8_t channel, tSirMacAddr targetApBssid)
-{
-}
-#endif
-
-/**
- * wlan_hdd_handle_fastreassoc() - Handle fastreassoc command
- * @pAdapter: pointer to hdd adapter
- * @command: pointer to the command received
- *
- * Return: VOS_STATUS enum
- */
-static VOS_STATUS wlan_hdd_handle_fastreassoc(hdd_adapter_t *pAdapter,
-						uint8_t *command)
-{
-	tANI_U8 *value = command;
-	tANI_U8 channel = 0;
-	tSirMacAddr targetApBssid;
-	hdd_station_ctx_t *pHddStaCtx = NULL;
-	hdd_context_t *pHddCtx = NULL;
-	int ret;
-	tCsrRoamModifyProfileFields mod_profile_fields;
-	uint32_t roam_id = 0;
-	pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
-	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
-
-	/* if not associated, no need to proceed with reassoc */
-	if (eConnectionState_Associated != pHddStaCtx->conn_info.connState) {
-		hddLog(LOG1, FL("Not associated!"));
-		return eHAL_STATUS_FAILURE;
-	}
-
-	ret = hdd_parse_reassoc_command_v1_data(value, targetApBssid, &channel);
-	if (ret) {
-		hddLog(LOGE, FL("Failed to parse reassoc command data"));
-		return eHAL_STATUS_FAILURE;
-	}
-
-	/* if the target bssid is same as currently associated AP,
-	   then no need to proceed with reassoc */
-	if (vos_mem_compare(targetApBssid,
-				pHddStaCtx->conn_info.bssId,
-				sizeof(tSirMacAddr))) {
-		sme_GetModifyProfileFields(pHddCtx->hHal, pAdapter->sessionId,
-						&mod_profile_fields);
-		sme_RoamReassoc(pHddCtx->hHal, pAdapter->sessionId, NULL,
-				mod_profile_fields, &roam_id, 1);
-		hddLog(LOG1, FL("Reassoc BSSID is same as currently associated AP bssid"));
-		return eHAL_STATUS_SUCCESS;
-	}
-
-	/* Check channel number is a valid channel number */
-	if (VOS_STATUS_SUCCESS !=
-		wlan_hdd_validate_operation_channel(pAdapter, channel)) {
-		hddLog(LOGE, FL("Invalid Channel [%d]"), channel);
-		return eHAL_STATUS_FAILURE;
-	}
-
-	/* Proceed with reassoc */
-	wlan_hdd_fastreassoc_handoff_request(pHddCtx, channel, targetApBssid);
-
-	/* Proceed with scan/roam */
-	csr_fastroam_neighbor_ap_event(pAdapter, channel, targetApBssid);
-
-	return eHAL_STATUS_SUCCESS;
-}
-
-/**
- * hdd_assign_reassoc_handoff - Set handoff source as REASSOC
- * @handoffInfo: Pointer to the csr Handoff Request.
- *
- * Return: None
- */
-#ifndef QCA_WIFI_ISOC
-static inline void hdd_assign_reassoc_handoff(tCsrHandoffRequest *handoffInfo)
-{
-	handoffInfo->src = REASSOC;
-}
-#else
-static inline void hdd_assign_reassoc_handoff(tCsrHandoffRequest *handoffInfo)
-{
-}
-#endif
 
 static int hdd_driver_command(hdd_adapter_t *pAdapter,
                               hdd_priv_data_t *ppriv_data)
@@ -3204,6 +2915,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *ptr = command ;
 
+           ret = hdd_drv_cmd_validate(command, 7);
+           if (ret)
+               goto exit;
+
            /* Change band request received */
 
            /* First 8 bytes will have "SETBAND " and
@@ -3222,18 +2937,32 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        else if(strncmp(command, "SETWMMPS", 8) == 0)
        {
            tANI_U8 *ptr = command;
+
+           ret = hdd_drv_cmd_validate(command, 8);
+           if (ret)
+               goto exit;
+
            ret = hdd_wmmps_helper(pAdapter, ptr);
        }
 
        else if(strncmp(command, "TDLSSCAN", 8) == 0)
        {
            tANI_U8 *ptr  = command;
+
+           ret = hdd_drv_cmd_validate(command, 8);
+           if (ret)
+               goto exit;
+
            ret = hdd_set_tdls_scan_type(pAdapter, ptr);
        }
 
        else if ( strncasecmp(command, "COUNTRY", 7) == 0 )
        {
            char *country_code;
+
+           ret = hdd_drv_cmd_validate(command, 7);
+           if (ret)
+               goto exit;
 
            country_code = command + 8;
 
@@ -3281,7 +3010,13 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        else if(strncmp(command, "SETSUSPENDMODE", 14) == 0)
        {
            int suspend = 0;
-           tANI_U8 *ptr = (tANI_U8*)command + 15;
+           tANI_U8 *ptr;
+
+           ret = hdd_drv_cmd_validate(command, 14);
+           if (ret)
+               goto exit;
+
+           ptr = (tANI_U8*)command + 15;
 
            suspend = *ptr - '0';
             MTRACE(vos_trace(VOS_MODULE_ID_HDD,
@@ -3296,6 +3031,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_S8 rssi = 0;
            tANI_U8 lookUpThreshold = CFG_NEIGHBOR_LOOKUP_RSSI_THRESHOLD_DEFAULT;
            eHalStatus status = eHAL_STATUS_SUCCESS;
+
+           ret = hdd_drv_cmd_validate(command, 14);
+           if (ret)
+               goto exit;
 
            /* Move pointer to ahead of SETROAMTRIGGER<delimiter> */
            value = value + 15;
@@ -3375,6 +3114,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 roamScanPeriod = 0;
            tANI_U16 neighborEmptyScanRefreshPeriod = CFG_EMPTY_SCAN_REFRESH_PERIOD_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 17);
+           if (ret)
+               goto exit;
+
            /* input refresh period is in terms of seconds */
            /* Move pointer to ahead of SETROAMSCANPERIOD<delimiter> */
            value = value + 18;
@@ -3442,6 +3185,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 roamScanRefreshPeriod = 0;
            tANI_U16 neighborScanRefreshPeriod = CFG_NEIGHBOR_SCAN_RESULTS_REFRESH_PERIOD_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 24);
+           if (ret)
+               goto exit;
+
            /* input refresh period is in terms of seconds */
            /* Move pointer to ahead of SETROAMSCANREFRESHPERIOD<delimiter> */
            value = value + 25;
@@ -3504,6 +3251,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
 	   tANI_BOOLEAN roamMode = CFG_LFR_FEATURE_ENABLED_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, SIZE_OF_SETROAMMODE);
+           if (ret)
+               goto exit;
 
 	   /* Move pointer to ahead of SETROAMMODE<delimiter> */
 	   value = value + SIZE_OF_SETROAMMODE + 1;
@@ -3581,6 +3332,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
            tANI_U8 roamRssiDiff = CFG_ROAM_RSSI_DIFF_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, 12);
+           if (ret)
+               goto exit;
 
            /* Move pointer to ahead of SETROAMDELTA<delimiter> */
            value = value + 13;
@@ -3830,6 +3585,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_U8 minTime = CFG_NEIGHBOR_SCAN_MIN_CHAN_TIME_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 25);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETROAMSCANCHANNELMINTIME<delimiter> */
            value = value + 26;
            /* Convert the value from ascii to integer */
@@ -4014,6 +3773,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_U16 maxTime = CFG_NEIGHBOR_SCAN_MAX_CHAN_TIME_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 18);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETSCANCHANNELTIME<delimiter> */
            value = value + 19;
            /* Convert the value from ascii to integer */
@@ -4070,6 +3833,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
            tANI_U16 val = CFG_NEIGHBOR_SCAN_TIMER_PERIOD_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, 15);
+           if (ret)
+               goto exit;
 
            /* Move pointer to ahead of SETSCANHOMETIME<delimiter> */
            value = value + 16;
@@ -4128,6 +3895,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_U8 val = CFG_ROAM_INTRA_BAND_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 16);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETROAMINTRABAND<delimiter> */
            value = value + 17;
            /* Convert the value from ascii to integer */
@@ -4184,6 +3955,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_U8 nProbes = CFG_ROAM_SCAN_N_PROBES_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 14);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETSCANNPROBES<delimiter> */
            value = value + 15;
            /* Convert the value from ascii to integer */
@@ -4237,6 +4012,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
            tANI_U16 homeAwayTime = CFG_ROAM_SCAN_HOME_AWAY_TIME_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, 19);
+           if (ret)
+               goto exit;
 
            /* Move pointer to ahead of SETSCANHOMEAWAYTIME<delimiter> */
            /* input value is in units of msec */
@@ -4292,14 +4071,69 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        }
        else if (strncmp(command, "REASSOC", 7) == 0)
        {
-           ret = hdd_parse_reassoc(pAdapter, command);
-           if (!ret)
+           tANI_U8 *value = command;
+           tANI_U8 channel = 0;
+           tSirMacAddr targetApBssid;
+           eHalStatus status = eHAL_STATUS_SUCCESS;
+#ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
+           tCsrHandoffRequest handoffInfo;
+#endif
+           hdd_station_ctx_t *pHddStaCtx = NULL;
+           pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
+
+           /* if not associated, no need to proceed with reassoc */
+           if (eConnectionState_Associated != pHddStaCtx->conn_info.connState)
+           {
+               VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO, "%s:Not associated!",__func__);
+               ret = -EINVAL;
                goto exit;
+           }
+
+           status = hdd_parse_reassoc_command_data(value, targetApBssid, &channel);
+           if (eHAL_STATUS_SUCCESS != status)
+           {
+               VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                  "%s: Failed to parse reassoc command data", __func__);
+               ret = -EINVAL;
+               goto exit;
+           }
+
+           /* if the target bssid is same as currently associated AP,
+              then no need to proceed with reassoc */
+           if (VOS_TRUE == vos_mem_compare(targetApBssid,
+                                           pHddStaCtx->conn_info.bssId, sizeof(tSirMacAddr)))
+           {
+               VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO, "%s:Reassoc BSSID is same as currently associated AP bssid",__func__);
+               ret = 0;
+               goto exit;
+           }
+
+           /* Check channel number is a valid channel number */
+           if(VOS_STATUS_SUCCESS !=
+                         wlan_hdd_validate_operation_channel(pAdapter, channel))
+           {
+               hddLog(VOS_TRACE_LEVEL_ERROR,
+                      "%s: Invalid Channel [%d]", __func__, channel);
+
+               ret = -EINVAL;
+               goto exit;
+           }
+
+           /* Proceed with reassoc */
+#ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
+           handoffInfo.channel = channel;
+           vos_mem_copy(handoffInfo.bssid, targetApBssid, sizeof(tSirMacAddr));
+           sme_HandoffRequest(pHddCtx->hHal, &handoffInfo);
+#endif
        }
        else if (strncmp(command, "SETWESMODE", 10) == 0)
        {
            tANI_U8 *value = command;
            tANI_BOOLEAN wesMode = CFG_ENABLE_WES_MODE_NAME_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, 10);
+           if (ret)
+               goto exit;
 
            /* Move pointer to ahead of SETWESMODE<delimiter> */
            value = value + 11;
@@ -4356,6 +4190,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_U8 lfrMode = CFG_LFR_FEATURE_ENABLED_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 11);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETFASTROAM<delimiter> */
            value = value + 12;
            /* Convert the value from ascii to integer */
@@ -4397,6 +4235,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_U8 ft = CFG_FAST_TRANSITION_ENABLED_NAME_DEFAULT;
 
+           ret = hdd_drv_cmd_validate(command, 17);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETFASTROAM<delimiter> */
            value = value + 18;
            /* Convert the value from ascii to integer */
@@ -4435,6 +4277,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
            tANI_U8 dfsScanMode = DFS_CHNL_SCAN_ENABLED_NORMAL;
+
+           ret = hdd_drv_cmd_validate(command, 14);
+           if (ret)
+               goto exit;
 
            /* Move pointer to ahead of SETDFSSCANMODE<delimiter> */
            value = value + 15;
@@ -4488,9 +4334,66 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        }
        else if (strncmp(command, "FASTREASSOC", 11) == 0)
        {
-           ret = wlan_hdd_handle_fastreassoc(pAdapter, command);
-           if (!ret)
+           tANI_U8 *value = command;
+           tANI_U8 channel = 0;
+           tSirMacAddr targetApBssid;
+           tANI_U8 trigger = 0;
+           eHalStatus status = eHAL_STATUS_SUCCESS;
+           tHalHandle hHal;
+           v_U32_t roamId = 0;
+           tCsrRoamModifyProfileFields modProfileFields;
+           hdd_station_ctx_t *pHddStaCtx = NULL;
+           pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
+           hHal = WLAN_HDD_GET_HAL_CTX(pAdapter);
+
+           /* if not associated, no need to proceed with reassoc */
+           if (eConnectionState_Associated != pHddStaCtx->conn_info.connState)
+           {
+               VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO, "%s:Not associated!",__func__);
+               ret = -EINVAL;
                goto exit;
+           }
+
+           status = hdd_parse_reassoc_command_data(value, targetApBssid, &channel);
+           if (eHAL_STATUS_SUCCESS != status)
+           {
+               VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                  "%s: Failed to parse reassoc command data", __func__);
+               ret = -EINVAL;
+               goto exit;
+           }
+
+           /* if the target bssid is same as currently associated AP,
+              issue reassoc to same AP */
+           if (VOS_TRUE == vos_mem_compare(targetApBssid,
+                                           pHddStaCtx->conn_info.bssId, sizeof(tSirMacAddr)))
+           {
+               VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+                         "%s:11r Reassoc BSSID is same as currently associated AP bssid",
+                         __func__);
+               sme_GetModifyProfileFields(hHal, pAdapter->sessionId,
+                                       &modProfileFields);
+               sme_RoamReassoc(hHal, pAdapter->sessionId,
+                            NULL, modProfileFields, &roamId, 1);
+               return 0;
+           }
+
+           /* Check channel number is a valid channel number */
+           if(VOS_STATUS_SUCCESS !=
+                         wlan_hdd_validate_operation_channel(pAdapter, channel))
+           {
+               hddLog(VOS_TRACE_LEVEL_ERROR,
+                      "%s: Invalid Channel  [%d]", __func__, channel);
+               return -EINVAL;
+           }
+
+           trigger = eSME_ROAM_TRIGGER_SCAN;
+
+           /* Proceed with scan/roam */
+           smeIssueFastRoamNeighborAPEvent(WLAN_HDD_GET_HAL_CTX(pAdapter),
+                                           &targetApBssid[0],
+                                           (tSmeFastRoamTrigger)(trigger),
+                                           channel);
        }
 #endif
 #ifdef FEATURE_WLAN_ESE
@@ -4498,6 +4401,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
            tANI_U8 eseMode = CFG_ESE_FEATURE_ENABLED_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, 10);
+           if (ret)
+               goto exit;
 
            /* Check if the features OKC/ESE/11R are supported simultaneously,
               then this operation is not permitted (return FAILURE) */
@@ -4550,6 +4457,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 *value = command;
            tANI_BOOLEAN roamScanControl = 0;
 
+           ret = hdd_drv_cmd_validate(command, 18);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of SETROAMSCANCONTROL<delimiter> */
            value = value + 19;
            /* Convert the value from ascii to integer */
@@ -4582,6 +4493,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 *value = command;
            tANI_U8 okcMode = CFG_OKC_FEATURE_ENABLED_DEFAULT;
+
+           ret = hdd_drv_cmd_validate(command, 10);
+           if (ret)
+               goto exit;
 
            /* Check if the features OKC/ESE/11R are supported simultaneously,
               then this operation is not permitted (return FAILURE) */
@@ -4652,6 +4567,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tANI_U8 filterType = 0;
            tANI_U8 *value = command;
 
+           ret = hdd_drv_cmd_validate(command, 21);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of ENABLE_PKTFILTER_IPV6<delimiter> */
            value = value + 22;
 
@@ -4683,6 +4602,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            char *dhcpPhase;
            int ret;
+
+           ret = hdd_drv_cmd_validate(command, 10);
+           if (ret)
+               goto exit;
 
            dhcpPhase = command + 11;
            if ('1' == *dhcpPhase)
@@ -4750,6 +4673,11 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        {
            tANI_U8 filterType = 0;
            tANI_U8 *value;
+
+           ret = hdd_drv_cmd_validate(command, 8);
+           if (ret)
+               goto exit;
+
            value = command + 9;
 
            /* Convert the value from ascii to integer */
@@ -4794,6 +4722,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            int      targetRate;
            tSirRateUpdateInd *rateUpdate;
            eHalStatus status;
+
+           ret = hdd_drv_cmd_validate(command, 9);
+           if (ret)
+               goto exit;
 
            /* Only valid for SAP mode */
            if (WLAN_HDD_SOFTAP != pAdapter->device_mode)
@@ -5587,6 +5519,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            tAniTrafStrmMetrics tsmMetrics;
            pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
 
+           ret = hdd_drv_cmd_validate(command, 11);
+           if (ret)
+               goto exit;
+
            /* if not associated, return error */
            if (eConnectionState_Associated != pHddStaCtx->conn_info.connState)
            {
@@ -5796,6 +5732,11 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        else if (strncmp(command, "TDLSSECONDARYCHANNELOFFSET", 26) == 0) {
            tANI_U8 *value = command;
            int set_value;
+
+           ret = hdd_drv_cmd_validate(command, 26);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of TDLSOFFCH*/
            value += 26;
            if (!(sscanf(value, "%d", &set_value))) {
@@ -5818,6 +5759,11 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        } else if (strncmp(command, "TDLSOFFCHANNELMODE", 18) == 0) {
            tANI_U8 *value = command;
            int set_value;
+
+           ret = hdd_drv_cmd_validate(command, 18);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of tdlsoffchnmode*/
            value += 18;
            ret = sscanf(value, "%d", &set_value);
@@ -5839,6 +5785,11 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        } else if (strncmp(command, "TDLSOFFCHANNEL", 14) == 0) {
            tANI_U8 *value = command;
            int set_value;
+
+           ret = hdd_drv_cmd_validate(command, 14);
+           if (ret)
+               goto exit;
+
            /* Move pointer to ahead of TDLSOFFCH*/
            value += 14;
            ret = sscanf(value, "%d", &set_value);
@@ -5869,8 +5820,13 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
            fwStatsContext_t fwStatsCtx;
            tSirFwStatsResult *fwStatsRsp = &(pAdapter->fwStatsRsp);
            tANI_U8 *ptr = command;
-           int stats = *(ptr + 11) - '0';
+           int stats;
 
+           ret = hdd_drv_cmd_validate(command, 10);
+           if (ret)
+               goto exit;
+
+           stats = *(ptr + 11) - '0';
            hddLog(VOS_TRACE_LEVEL_INFO, FL("stats = %d "),stats);
            if (!IS_FEATURE_FW_STATS_ENABLE)
            {
@@ -5964,6 +5920,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        }
        else if (strncasecmp(command, "SET_FCC_CHANNEL", 15) == 0)
        {
+           ret = hdd_drv_cmd_validate(command, 15);
+           if (ret)
+               goto exit;
+
           /*
            * this command wld be called by user-space when it detects WLAN
            * ON after airplane mode is set. When APM is set, WLAN turns off.
@@ -5977,6 +5937,10 @@ static int hdd_driver_command(hdd_adapter_t *pAdapter,
        }
        else if (strncasecmp(command, "DISABLE_CA_EVENT", 16) == 0)
        {
+           ret = hdd_drv_cmd_validate(command, 16);
+           if (ret)
+               goto exit;
+
            ret = hdd_enable_disable_ca_event(pHddCtx, command, 16);
        }
        else {
@@ -6164,7 +6128,7 @@ static VOS_STATUS hdd_parse_ese_beacon_req(tANI_U8 *pValue,
     /*no argument followed by spaces*/
     if ('\0' == *inPtr) return -EINVAL;
 
-    /*getting the first argument ie measurement token*/
+    /*getting the first argument ie Number of IE fields */
     v = sscanf(inPtr, "%31s ", buf);
     if (1 != v) return -EINVAL;
 
@@ -6267,7 +6231,7 @@ static void hdd_GetTsmStatsCB( tAniTrafStrmMetrics tsmMetrics, const tANI_U32 st
    if (NULL == pContext)
    {
       hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Bad param, pContext [%p]",
+             "%s: Bad param, pContext [%pK]",
              __func__, pContext);
       return;
    }
@@ -6285,7 +6249,7 @@ static void hdd_GetTsmStatsCB( tAniTrafStrmMetrics tsmMetrics, const tANI_U32 st
       /* the caller presumably timed out so there is nothing we can do */
       spin_unlock(&hdd_context_lock);
       hddLog(VOS_TRACE_LEVEL_WARN,
-             "%s: Invalid context, pAdapter [%p] magic [%08x]",
+             "%s: Invalid context, pAdapter [%pK] magic [%08x]",
               __func__, pAdapter, pStatsContext->magic);
       return;
    }
@@ -6717,21 +6681,24 @@ VOS_STATUS hdd_parse_channellist(tANI_U8 *pValue, tANI_U8 *pChannelList, tANI_U8
 }
 
 
-/**
- * hdd_parse_reassoc_command_v1_data() - HDD Parse reassoc command data
- *    This function parses the reasoc command data passed in the format
- *    REASSOC<space><bssid><space><channel>
- *
- * @pValue: Pointer to input data (its a NUL terminated string)
- * @pTargetApBssid: Pointer to target Ap bssid
- * @pChannel: Pointer to the Target AP channel
- *
- * Return: 0 for success non-zero for failure
- */
-static int hdd_parse_reassoc_command_v1_data(const tANI_U8 *pValue,
-				tANI_U8 *pTargetApBssid, tANI_U8 *pChannel)
+/**---------------------------------------------------------------------------
+
+  \brief hdd_parse_reassoc_command_data() - HDD Parse reassoc command data
+
+  This function parses the reasoc command data passed in the format
+  REASSOC<space><bssid><space><channel>
+
+  \param  - pValue Pointer to input data (its a NUL terminated string)
+  \param  - pTargetApBssid Pointer to target Ap bssid
+  \param  - pChannel Pointer to the Target AP channel
+
+  \return - 0 for success non-zero for failure
+
+  --------------------------------------------------------------------------*/
+VOS_STATUS hdd_parse_reassoc_command_data(tANI_U8 *pValue,
+                            tANI_U8 *pTargetApBssid, tANI_U8 *pChannel)
 {
-    const tANI_U8 *inPtr = pValue;
+    tANI_U8 *inPtr = pValue;
     int tempInt;
     int v = 0;
     tANI_U8 tempBuf[32];
@@ -7263,7 +7230,6 @@ static void __hdd_uninit (struct net_device *dev)
       /* after uninit our adapter structure will no longer be valid */
       pAdapter->dev = NULL;
       pAdapter->magic = 0;
-      pAdapter->pHddCtx = NULL;
    } while (0);
 
    EXIT();
@@ -8012,32 +7978,6 @@ static eHalStatus hdd_smeCloseSessionCallback(void *pContext)
 
    return eHAL_STATUS_SUCCESS;
 }
-/**
- * hdd_close_tx_queues() - close tx queues
- * @hdd_ctx: hdd global context
- *
- * Return: None
- */
-static void hdd_close_tx_queues(hdd_context_t *hdd_ctx)
-{
-   VOS_STATUS status;
-   hdd_adapter_t *adapter;
-   hdd_adapter_list_node_t *adapter_node = NULL, *next_adapter = NULL;
-   /* Not validating hdd_ctx as it's already done by the caller */
-   ENTER();
-   status = hdd_get_front_adapter(hdd_ctx, &adapter_node);
-   while (NULL != adapter_node && VOS_STATUS_SUCCESS == status) {
-      adapter = adapter_node->pAdapter;
-      if (adapter && adapter->dev) {
-          netif_tx_disable (adapter->dev);
-          netif_carrier_off(adapter->dev);
-      }
-      status = hdd_get_next_adapter(hdd_ctx, adapter_node,
-                                    &next_adapter);
-      adapter_node = next_adapter;
-   }
-   EXIT();
-}
 
 VOS_STATUS hdd_init_station_mode( hdd_adapter_t *pAdapter )
 {
@@ -8228,9 +8168,7 @@ void hdd_deinit_adapter( hdd_context_t *pHddCtx, hdd_adapter_t *pAdapter, tANI_U
          hdd_cleanup_actionframe(pHddCtx, pAdapter);
 
          hdd_unregister_hostapd(pAdapter, rtnl_held);
-         /* set con_mode to STA only when no SAP concurrency mode */
-         if (!(hdd_get_concurrency_mode() & (VOS_SAP | VOS_P2P_GO)))
-             hdd_set_conparam(0);
+         hdd_set_conparam( 0 );
          break;
       }
 
@@ -8535,7 +8473,7 @@ void hdd_monPostMsgCb(tANI_U32 *magic, struct completion *cmpVar)
 {
     if (magic == NULL || cmpVar == NULL) {
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                  FL("invalid arguments %p %p"), magic, cmpVar);
+                  FL("invalid arguments %pK %pK"), magic, cmpVar);
         return;
     }
     if (*magic != MON_MODE_MSG_MAGIC) {
@@ -8685,7 +8623,7 @@ hdd_adapter_t* hdd_open_adapter( hdd_context_t *pHddCtx, tANI_U8 session_type,
          pAdapter->device_mode = session_type;
 
          hdd_initialize_adapter_common(pAdapter);
-         status = hdd_init_ap_mode(pAdapter, false);
+         status = hdd_init_ap_mode(pAdapter);
          if( VOS_STATUS_SUCCESS != status )
             goto err_free_netdev;
 
@@ -9061,7 +8999,7 @@ VOS_STATUS hdd_stop_adapter( hdd_context_t *pHddCtx, hdd_adapter_t *pAdapter,
                  FL("wait on disconnect_comp_var failed %ld"), ret);
              }
          }
-         if(pScanInfo != NULL && pHddCtx->scan_info.mScanPending)
+         else if(pScanInfo != NULL && pHddCtx->scan_info.mScanPending)
          {
             wlan_hdd_scan_abort(pAdapter);
          }
@@ -9437,18 +9375,7 @@ VOS_STATUS hdd_reset_all_adapters( hdd_context_t *pHddCtx )
       pAdapter = pAdapterNode->pAdapter;
       hddLog(VOS_TRACE_LEVEL_INFO, FL("Disabling queues"));
       netif_tx_disable(pAdapter->dev);
-
-      if (pHddCtx->cfg_ini->sap_internal_restart &&
-              pAdapter->device_mode == WLAN_HDD_SOFTAP) {
-          hddLog(LOG1, FL("driver supports sap restart"));
-          vos_flush_work(&pHddCtx->sap_start_work);
-          hdd_sap_indicate_disconnect_for_sta(pAdapter);
-          hdd_cleanup_actionframe(pHddCtx, pAdapter);
-          hdd_softap_deinit_tx_rx(pAdapter, true);
-          hdd_sap_destroy_timers(pAdapter);
-      } else {
-          netif_carrier_off(pAdapter->dev);
-      }
+      netif_carrier_off(pAdapter->dev);
 
       pAdapter->sessionCtx.station.hdd_ReassocScenario = VOS_FALSE;
 
@@ -9668,15 +9595,7 @@ VOS_STATUS hdd_start_all_adapters( hdd_context_t *pHddCtx )
             break;
 
          case WLAN_HDD_SOFTAP:
-            if (pHddCtx->cfg_ini->sap_internal_restart) {
-                hdd_init_ap_mode(pAdapter, true);
-                status = hdd_sta_id_hash_attach(pAdapter);
-                if (VOS_STATUS_SUCCESS != status)
-                {
-                    hddLog(VOS_TRACE_LEVEL_FATAL,
-                         FL("failed to attach hash for"));
-                }
-            }
+            /* softAP can handle SSR */
             break;
 
          case WLAN_HDD_P2P_GO:
@@ -10302,12 +10221,12 @@ static void hdd_full_power_callback(void *callbackContext, eHalStatus status)
    struct statsContext *pContext = callbackContext;
 
    hddLog(VOS_TRACE_LEVEL_INFO,
-          "%s: context = %p, status = %d", __func__, pContext, status);
+          "%s: context = %pK, status = %d", __func__, pContext, status);
 
    if (NULL == callbackContext)
    {
       hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Bad param, context [%p]",
+             "%s: Bad param, context [%pK]",
              __func__, callbackContext);
       return;
    }
@@ -10664,8 +10583,6 @@ void hdd_wlan_exit(hdd_context_t *pHddCtx)
        vos_timer_stop(&pHddCtx->tdls_source_timer);
    }
 
-   vos_set_snoc_high_freq_voting(false);
-
    vos_timer_destroy(&pHddCtx->tdls_source_timer);
 
    //Disable IMPS/BMPS as we do not want the device to enter any power
@@ -10806,7 +10723,6 @@ void hdd_wlan_exit(hdd_context_t *pHddCtx)
    //Clean up HDD Nlink Service
    send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
 
-   hdd_close_tx_queues(pHddCtx);
    wlan_free_fwr_mem_dump_buffer();
    memdump_deinit();
 
@@ -11899,14 +11815,11 @@ int hdd_wlan_startup(struct device *dev )
    /*
     * cfg80211: Initialization  ...
     */
-   if (VOS_FTM_MODE != hdd_get_conparam())
+   if (0 < wlan_hdd_cfg80211_init(dev, wiphy, pHddCtx->cfg_ini))
    {
-      if (0 < wlan_hdd_cfg80211_init(dev, wiphy, pHddCtx->cfg_ini))
-      {
-         hddLog(VOS_TRACE_LEVEL_FATAL,
-                 "%s: wlan_hdd_cfg80211_init return failure", __func__);
-         goto err_config;
-      }
+      hddLog(VOS_TRACE_LEVEL_FATAL,
+              "%s: wlan_hdd_cfg80211_init return failure", __func__);
+      goto err_config;
    }
 
    // Update VOS trace levels based upon the cfg.ini
@@ -12566,13 +12479,6 @@ int hdd_wlan_startup(struct device *dev )
    // Initialize the restart logic
    wlan_hdd_restart_init(pHddCtx);
 
-   if (pHddCtx->cfg_ini->fIsLogpEnabled) {
-       vos_wdthread_init_timer_work(vos_process_wd_timer);
-       /* Initialize the timer to detect thread stuck issues */
-       vos_thread_stuck_timer_init(
-                &((VosContextType*)pVosContext)->vosWatchdog);
-   }
-
    //Register the traffic monitor timer now
    if ( pHddCtx->cfg_ini->dynSplitscan)
    {
@@ -12632,6 +12538,8 @@ int hdd_wlan_startup(struct device *dev )
    /*Fw mem dump procfs initialization*/
    memdump_init();
    hdd_dp_util_send_rps_ind(pHddCtx);
+
+   hdd_assoc_registerFwdEapolCB(pVosContext);
 
    goto success;
 
@@ -13159,7 +13067,7 @@ VOS_STATUS hdd_softap_sta_deauth(hdd_adapter_t *pAdapter,
 
     ENTER();
 
-    hddLog(LOG1, "hdd_softap_sta_deauth:(%p, false)",
+    hddLog(LOG1, "hdd_softap_sta_deauth:(%pK, false)",
            (WLAN_HDD_GET_CTX(pAdapter))->pvosContext);
 
     //Ignore request to deauth bcmc station
@@ -13247,7 +13155,7 @@ void hdd_softap_sta_disassoc(hdd_adapter_t *pAdapter,v_U8_t *pDestMacAddress)
 
     ENTER();
 
-    hddLog( LOGE, "hdd_softap_sta_disassoc:(%p, false)", (WLAN_HDD_GET_CTX(pAdapter))->pvosContext);
+    hddLog( LOGE, "hdd_softap_sta_disassoc:(%pK, false)", (WLAN_HDD_GET_CTX(pAdapter))->pvosContext);
 
     //Ignore request to disassoc bcmc station
     if( pDestMacAddress[0] & 0x1 )
@@ -13262,7 +13170,7 @@ void hdd_softap_tkip_mic_fail_counter_measure(hdd_adapter_t *pAdapter,v_BOOL_t e
 
     ENTER();
 
-    hddLog( LOGE, "hdd_softap_tkip_mic_fail_counter_measure:(%p, false)", (WLAN_HDD_GET_CTX(pAdapter))->pvosContext);
+    hddLog( LOGE, "hdd_softap_tkip_mic_fail_counter_measure:(%pK, false)", (WLAN_HDD_GET_CTX(pAdapter))->pvosContext);
 
     WLANSAP_SetCounterMeasure(pVosContext, (v_BOOL_t)enable);
 }
@@ -13606,7 +13514,7 @@ static VOS_STATUS wlan_hdd_framework_restart(hdd_context_t *pHddCtx)
    if ((NULL == pAdapterNode) || (VOS_STATUS_SUCCESS != status))
    {
        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                 FL("fail to get adapter: %p %d"), pAdapterNode, status);
+                 FL("fail to get adapter: %pK %d"), pAdapterNode, status);
        goto end;
    }
 
@@ -14846,69 +14754,6 @@ void hdd_initialize_adapter_common(hdd_adapter_t *pAdapter)
         return;
 }
 
-
-/**
- * wlan_hdd_start_sap() - This function starts bss of SAP.
- * @ap_adapter: SAP adapter
- *
- * This function will process the starting of sap adapter.
- *
- * Return: void.
- */
-void wlan_hdd_start_sap(hdd_adapter_t *ap_adapter)
-{
-	hdd_ap_ctx_t *hdd_ap_ctx;
-	hdd_hostapd_state_t *hostapd_state;
-	VOS_STATUS vos_status;
-	hdd_context_t *hdd_ctx;
-	tsap_Config_t *pConfig;
-
-	if (NULL == ap_adapter) {
-		VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-		FL("ap_adapter is NULL here"));
-		return;
-	}
-
-	hdd_ctx = WLAN_HDD_GET_CTX(ap_adapter);
-	hdd_ap_ctx = WLAN_HDD_GET_AP_CTX_PTR(ap_adapter);
-	hostapd_state = WLAN_HDD_GET_HOSTAP_STATE_PTR(ap_adapter);
-	pConfig = &ap_adapter->sessionCtx.ap.sapConfig;
-
-	mutex_lock(&hdd_ctx->sap_lock);
-	if (test_bit(SOFTAP_BSS_STARTED, &ap_adapter->event_flags))
-		goto end;
-
-	if (0 != wlan_hdd_cfg80211_update_apies(ap_adapter)) {
-		hddLog(LOGE, FL("SAP Not able to set AP IEs"));
-		goto end;
-	}
-
-	vos_event_reset(&hostapd_state->vosEvent);
-	if (WLANSAP_StartBss(hdd_ctx->pvosContext, hdd_hostapd_SAPEventCB,
-			&hdd_ap_ctx->sapConfig, (v_PVOID_t)ap_adapter->dev)
-			!= VOS_STATUS_SUCCESS) {
-		goto end;
-	}
-
-	VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,
-		FL("Waiting for SAP to start"));
-	vos_status = vos_wait_single_event(&hostapd_state->vosEvent, 10000);
-	if (!VOS_IS_STATUS_SUCCESS(vos_status)) {
-		VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-			FL("SAP Start failed"));
-		goto end;
-	}
-	VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,
-		FL("SAP Start Success"));
-	set_bit(SOFTAP_BSS_STARTED, &ap_adapter->event_flags);
-
-	wlan_hdd_incr_active_session(hdd_ctx, ap_adapter->device_mode);
-	hostapd_state->bCommit = TRUE;
-
-end:
-	mutex_unlock(&hdd_ctx->sap_lock);
-	return;
-}
 
 //Register the module init/exit functions
 module_init(hdd_module_init);

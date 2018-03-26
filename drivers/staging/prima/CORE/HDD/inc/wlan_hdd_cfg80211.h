@@ -105,11 +105,6 @@
 #define IS_CHANNEL_VALID(channel) ((channel >= 0 && channel < 15) \
                      || (channel >= 36 && channel <= 184))
 
-#ifdef WLAN_FEATURE_LINK_LAYER_STATS
-/* Number of Radios */
-#define NUM_RADIOS  0x1
-#endif /* WLAN_FEATURE_LINK_LAYER_STATS */
-
 typedef struct {
    u8 element_id;
    u8 len;
@@ -179,10 +174,12 @@ enum qca_nl80211_vendor_subcmds {
     QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_INFO = 61,
     /* Start Wifi Memory Dump */
     QCA_NL80211_VENDOR_SUBCMD_WIFI_LOGGER_MEMORY_DUMP = 63,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_SET_SSID_HOTLIST = 65,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_RESET_SSID_HOTLIST = 66,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_FOUND = 67,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_LOST = 68,
+
+    /*
+     * APIs corresponding to the sub commands 65-68 are deprecated.
+     * These sub commands are reserved and not supposed to be used
+     * for any other purpose
+     */
 
     /* Wi-Fi Configuration subcommands */
     QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION = 74,
@@ -229,11 +226,6 @@ enum qca_nl80211_vendor_subcmds_index {
     QCA_NL80211_VENDOR_SUBCMD_TDLS_STATE_CHANGE_INDEX,
     QCA_NL80211_VENDOR_SUBCMD_NAN_INDEX,
     QCA_NL80211_VENDOR_SUBCMD_WIFI_LOGGER_MEMORY_DUMP_INDEX,
-
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_SET_SSID_HOTLIST_INDEX,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_RESET_SSID_HOTLIST_INDEX,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_FOUND_INDEX,
-    QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_LOST_INDEX,
 
     QCA_NL80211_VENDOR_SUBCMD_MONITOR_RSSI_INDEX,
     QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_AP_LOST_INDEX,
@@ -1046,10 +1038,6 @@ enum qca_wlan_vendor_attr_extscan_results
     /* Unsigned 32bit value; a EXTSCAN Capabilities attribute. */
     QCA_WLAN_VENDOR_ATTR_EXTSCAN_RESULTS_CAPABILITIES_MAX_NUM_WHITELISTED_SSID,
 
-    /* EXTSCAN attributes for
-     * QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_FOUND sub-command &
-     * QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_LOST sub-command
-     */
     /* Use attr QCA_WLAN_VENDOR_ATTR_EXTSCAN_NUM_RESULTS_AVAILABLE
      * to indicate number of results.
      */
@@ -1421,6 +1409,25 @@ v_U8_t* wlan_hdd_cfg80211_get_ie_ptr(
 #endif
                                      int length, v_U8_t eid);
 
+#if defined(CFG80211_DISCONNECTED_V2) || \
+(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0))
+static inline void wlan_hdd_cfg80211_indicate_disconnect(struct net_device *dev,
+                                                         bool locally_generated,
+                                                         int reason)
+{
+    cfg80211_disconnected(dev, reason, NULL, 0,
+                          locally_generated, GFP_KERNEL);
+}
+#else
+static inline void wlan_hdd_cfg80211_indicate_disconnect(struct net_device *dev,
+                                                         bool locally_generated,
+                                                         int reason)
+{
+    cfg80211_disconnected(dev, reason, NULL, 0,
+                          GFP_KERNEL);
+}
+#endif
+
 #ifdef FEATURE_WLAN_CH_AVOID
 int wlan_hdd_send_avoid_freq_event(hdd_context_t *pHddCtx,
                                    tHddAvoidFreqList *pAvoidFreqList);
@@ -1476,30 +1483,9 @@ enum qca_wlan_vendor_attr_memory_dump {
     QCA_WLAN_VENDOR_ATTR_MEMORY_DUMP_AFTER_LAST - 1,
 };
 
-#if defined(CFG80211_DISCONNECTED_V2) || \
-(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0))
-static inline void wlan_hdd_cfg80211_indicate_disconnect(struct net_device *dev,
-                                                         bool locally_generated,
-                                                         int reason)
-{
-    cfg80211_disconnected(dev, reason, NULL, 0,
-                          locally_generated, GFP_KERNEL);
-}
-#else
-static inline void wlan_hdd_cfg80211_indicate_disconnect(struct net_device *dev,
-                                                         bool locally_generated,
-                                                         int reason)
-{
-    cfg80211_disconnected(dev, reason, NULL, 0,
-                          GFP_KERNEL);
-}
-#endif
-
 struct cfg80211_bss* wlan_hdd_cfg80211_update_bss_list(
    hdd_adapter_t *pAdapter, tSirMacAddr bssid);
 
-struct cfg80211_bss *wlan_hdd_cfg80211_inform_bss_frame(hdd_adapter_t *pAdapter,
-		tSirBssDescription *bss_desc);
 #ifdef CFG80211_DEL_STA_V2
 int wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
                                   struct net_device *dev,

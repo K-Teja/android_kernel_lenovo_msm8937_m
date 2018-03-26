@@ -293,27 +293,6 @@ eHalStatus sme_SetBssHotlist (tHalHandle hHal,
 eHalStatus sme_ResetBssHotlist (tHalHandle hHal,
                               tSirEXTScanResetBssidHotlistReqParams *pResetReq);
 
-/**
- * sme_set_ssid_hotlist() - Set the SSID hotlist
- * @hal: SME handle
- * @request: set ssid hotlist request
- *
- * Return: eHalStatus
- */
-eHalStatus sme_set_ssid_hotlist(tHalHandle hal,
-             tSirEXTScanSetSsidHotListReqParams *request);
-
-/* ---------------------------------------------------------------------------
-    \fn sme_ResetBssHotlist
-    \brief  SME API to reset BSSID hotlist
-    \param  hHal
-    \param  pSetHotListReq: Extented Scan set hotlist structure
-    \- return eHalStatus
-    -------------------------------------------------------------------------*/
-eHalStatus sme_reset_ssid_hotlist (tHalHandle hHal,
-                              tSirEXTScanResetSsidHotlistReqParams *pResetReq);
-
-
 /* ---------------------------------------------------------------------------
     \fn sme_getCachedResults
     \brief  SME API to get cached results
@@ -3927,8 +3906,7 @@ eHalStatus sme_SetTdls2040BSSCoexistence(tHalHandle hHal, tANI_S32 isEnabled);
 eHalStatus sme_SetRtsCtsHtVht(tHalHandle hHal, tANI_U32 set_value);
 
 tANI_BOOLEAN sme_handleSetFccChannel(tHalHandle hHal,
-                                      tANI_U8 fcc_constraint,
-                                      v_U32_t scan_pending);
+                                      tANI_U8 fcc_constraint);
 
 eHalStatus sme_DeleteAllTDLSPeers(tHalHandle hHal, uint8_t sessionId);
 eHalStatus sme_fatal_event_logs_req(tHalHandle hHal, tANI_U32 is_fatal,
@@ -3960,7 +3938,6 @@ eHalStatus sme_remove_bssid_from_scan_list(tHalHandle hal,
 	tSirMacAddr bssid);
 void sme_set_mgmt_frm_via_wq5(tHalHandle hHal,
         tANI_BOOLEAN sendMgmtPktViaWQ5);
-eHalStatus sme_update_cfg_int_param(tHalHandle hHal, tANI_U32 cfg_id);
 
 /* ARP DEBUG STATS */
 eHalStatus sme_set_nud_debug_stats(tHalHandle hHal,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -1085,8 +1085,8 @@ sme_process_cmd:
                             {
                                csrReleaseCommand(pMac, pCommand);
                             }
-                            pMac->max_power_cmd_pending = false;
                             break;
+
 #ifdef FEATURE_OEM_DATA_SUPPORT
                         case eSmeCommandOemDataReq:
                             csrLLUnlock(&pMac->sme.smeCmdActiveList);
@@ -1437,6 +1437,7 @@ eHalStatus sme_Open(tHalHandle hHal)
 #if defined WLAN_FEATURE_VOWIFI_11R
       sme_FTOpen(pMac);
 #endif
+
       sme_p2pOpen(pMac);
       smeTraceInit(pMac);
       sme_register_debug_callback();
@@ -6030,7 +6031,7 @@ eHalStatus sme_DHCPStartInd( tHalHandle hHal,
             sme_ReleaseGlobalLock( &pMac->sme );
             return eHAL_STATUS_FAILURE;
         }
-        pSession->dhcp_done = false;
+
         pMsg = (tAniDHCPInd*)vos_mem_malloc(sizeof(tAniDHCPInd));
         if (NULL == pMsg)
         {
@@ -6098,7 +6099,7 @@ eHalStatus sme_DHCPStopInd( tHalHandle hHal,
             sme_ReleaseGlobalLock( &pMac->sme );
             return eHAL_STATUS_FAILURE;
         }
-        pSession->dhcp_done = true;
+
         pMsg = (tAniDHCPInd*)vos_mem_malloc(sizeof(tAniDHCPInd));
         if (NULL == pMsg)
         {
@@ -8221,70 +8222,6 @@ eHalStatus sme_ConfigureRxpFilter( tHalHandle hHal,
 
 /* ---------------------------------------------------------------------------
 
-  \fn    sme_update_hal_int_param
-
-  \brief
-    SME will pass this request to lower mac to indicate that the host needs to
-    update the cfg item
-
-  \param
-
-    hHal - The handle returned by macOpen.
-
-    cfg_id- cfg param id
-
-
-  \return eHalStatus
-
-
---------------------------------------------------------------------------- */
-
-eHalStatus sme_update_cfg_int_param(tHalHandle hHal,
-               tANI_U32 cfg_id)
-{
-    eHalStatus status = eHAL_STATUS_SUCCESS;
-    VOS_STATUS vosStatus = VOS_STATUS_SUCCESS;
-    tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
-    vos_msg_t vosMessage;
-    tpSirUpdateCfgIntParam updateCfgIntParam =
-        vos_mem_malloc(sizeof(tSirUpdateCfgIntParam));
-
-    if (updateCfgIntParam == NULL)
-    {
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-            "%s: vos_mem_alloc  for updateCfgIntParam", __func__);
-        return eHAL_STATUS_FAILURE;
-    }
-
-    updateCfgIntParam->cfgId = cfg_id;
-    /*
-     * This API expect user must have updated cfg item using cfg API's.
-     * Hence it just need the cfg param id not the cfg value.
-     */
-    status = sme_AcquireGlobalLock(&pMac->sme);
-    if (eHAL_STATUS_SUCCESS == status)
-    {
-        /* serialize the req through MC thread */
-        vosMessage.bodyptr = updateCfgIntParam;
-        vosMessage.type    = WDA_UPDATE_CFG_INT_PARAM;
-        vosStatus = vos_mq_post_message(VOS_MQ_ID_WDA, &vosMessage);
-        if (!VOS_IS_STATUS_SUCCESS(vosStatus))
-        {
-           status = eHAL_STATUS_FAILURE;
-           vos_mem_free(updateCfgIntParam);
-        }
-        sme_ReleaseGlobalLock(&pMac->sme);
-    }
-    else
-    {
-        status = eHAL_STATUS_FAILURE;
-        vos_mem_free(updateCfgIntParam);
-    }
-    return(status);
-}
-
-/* ---------------------------------------------------------------------------
-
   \fn    sme_ConfigureSuspendInd
 
   \brief
@@ -9135,7 +9072,7 @@ eHalStatus sme_8023MulticastList (tHalHandle hHal, tANI_U8 sessionId, tpSirRcvFl
     tCsrRoamSession         *pSession = NULL;
 
     VOS_TRACE( VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO, "%s: "
-               "ulMulticastAddrCnt=%d, multicastAddr[0]=%p", __func__,
+               "ulMulticastAddrCnt=%d, multicastAddr[0]=%pK", __func__,
                pMulticastAddrs->ulMulticastAddrCnt,
                pMulticastAddrs->multicastAddr[0]);
 
@@ -9563,13 +9500,6 @@ eHalStatus sme_SetMaxTxPower(tHalHandle hHal, tSirMacAddr bssid,
    eHalStatus status = eHAL_STATUS_SUCCESS;
    tSmeCmd *set_max_tx_pwr;
 
-   if (pMac->max_power_cmd_pending)
-   {
-      smsLog(pMac, LOG1,
-        FL("set max tx power already in progress"));
-      return eHAL_STATUS_RESOURCES;
-   }
-
    MTRACE(vos_trace(VOS_MODULE_ID_SME,
        TRACE_CODE_SME_RX_HDD_SET_MAXTXPOW, NO_SESSION, 0));
    smsLog(pMac, LOG1,
@@ -9588,13 +9518,11 @@ eHalStatus sme_SetMaxTxPower(tHalHandle hHal, tSirMacAddr bssid,
            vos_mem_copy(set_max_tx_pwr->u.set_tx_max_pwr.self_sta_mac_addr,
                  self_mac_addr, SIR_MAC_ADDR_LENGTH);
            set_max_tx_pwr->u.set_tx_max_pwr.power = db;
-           pMac->max_power_cmd_pending = true;
            status = csrQueueSmeCommand(pMac, set_max_tx_pwr, eANI_BOOLEAN_TRUE);
            if ( !HAL_STATUS_SUCCESS( status ) )
            {
                smsLog( pMac, LOGE, FL("fail to send msg status = %d"), status );
                csrReleaseCommandScan(pMac, set_max_tx_pwr);
-               pMac->max_power_cmd_pending = false;
            }
        }
        else
@@ -12913,9 +12841,10 @@ VOS_STATUS sme_UpdateDSCPtoUPMapping( tHalHandle hHal,
                    if ((pSession->QosMapSet.dscp_range[i][0] == 255) &&
                                 (pSession->QosMapSet.dscp_range[i][1] == 255))
                    {
+                       dscpmapping[j]= 0;
                        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-                               "%s: User Priority %d is not used in mapping",
-                                __func__, i);
+                       "%s: User Priority %d is not used in mapping",
+                                                             __func__, i);
                        break;
                    }
                    else
@@ -13387,117 +13316,6 @@ eHalStatus sme_ResetBssHotlist (tHalHandle hHal,
     }
     return(status);
 }
-
-/**
- * sme_set_ssid_hotlist() - Set the SSID hotlist
- * @hal: SME handle
- * @request: set ssid hotlist request
- *
- * Return: eHalStatus
- */
-eHalStatus
-sme_set_ssid_hotlist(tHalHandle hal,
-             tSirEXTScanSetSsidHotListReqParams *request)
-{
-    eHalStatus status;
-    VOS_STATUS vstatus;
-    tpAniSirGlobal mac = PMAC_STRUCT(hal);
-    vos_msg_t vos_message;
-    tSirEXTScanSetSsidHotListReqParams *set_req;
-    int i;
-
-    set_req = vos_mem_malloc(sizeof(*set_req));
-    if (!set_req) {
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-              "%s: Not able to allocate memory for WDA_EXTSCAN_SET_SSID_HOTLIST_REQ",
-              __func__);
-        return eHAL_STATUS_FAILURE;
-    }
-
-    *set_req = *request;
-
-
-
-   for( i = 0; i < set_req->ssid_count; i++){
-
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-         "%s: SSID %s \n length: %d",
-              __func__, set_req->ssid[i].ssid.ssId, set_req->ssid[i].ssid.length);
-  }
-
-     MTRACE(vos_trace(VOS_MODULE_ID_SME,
-            TRACE_CODE_SME_RX_HDD_EXTSCAN_SET_SSID_HOTLIST, NO_SESSION, 0));
-
-    status = sme_AcquireGlobalLock(&mac->sme);
-    if (eHAL_STATUS_SUCCESS == status) {
-        /* Serialize the req through MC thread */
-        vos_message.bodyptr = set_req;
-        vos_message.type    = WDA_EXTSCAN_SET_SSID_HOTLIST_REQ;
-        vstatus = vos_mq_post_message(VOS_MQ_ID_WDA, &vos_message);
-        sme_ReleaseGlobalLock(&mac->sme);
-        if (!VOS_IS_STATUS_SUCCESS(vstatus)) {
-            vos_mem_free(set_req);
-            status = eHAL_STATUS_FAILURE;
-        }
-    } else {
-      VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-            "%s: sme_AcquireGlobalLock error", __func__);
-        vos_mem_free(set_req);
-        status = eHAL_STATUS_FAILURE;
-    }
-    return status;
-}
-
-/**
- * sme_reset_ssid_hotlist() - Set the SSID hotlist
- * @hal: SME handle
- * @request: reset ssid hotlist request
- *
- * Return: eHalStatus
- */
-eHalStatus
-sme_reset_ssid_hotlist(tHalHandle hal,
-        tSirEXTScanResetSsidHotlistReqParams *request)
-{
-    eHalStatus status;
-    VOS_STATUS vstatus;
-    tpAniSirGlobal mac = PMAC_STRUCT(hal);
-    vos_msg_t vos_message;
-    tSirEXTScanResetSsidHotlistReqParams *set_req;
-
-    set_req = vos_mem_malloc(sizeof(*set_req));
-    if (!set_req) {
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-                "%s: Not able to allocate memory for WDA_EXTSCAN_SET_SSID_HOTLIST_REQ",
-                __func__);
-        return eHAL_STATUS_FAILURE;
-    }
-
-    *set_req = *request;
-
-    MTRACE(vos_trace(VOS_MODULE_ID_SME,
-            TRACE_CODE_SME_RX_HDD_EXTSCAN_RESET_SSID_HOTLIST, NO_SESSION, 0));
-
-    status = sme_AcquireGlobalLock(&mac->sme);
-    if (eHAL_STATUS_SUCCESS == status) {
-        /* Serialize the req through MC thread */
-        vos_message.bodyptr = set_req;
-        vos_message.type    = WDA_EXTSCAN_RESET_SSID_HOTLIST_REQ;
-        vstatus = vos_mq_post_message(VOS_MQ_ID_WDA, &vos_message);
-        sme_ReleaseGlobalLock(&mac->sme);
-        if (!VOS_IS_STATUS_SUCCESS(vstatus)) {
-            vos_mem_free(set_req);
-            status = eHAL_STATUS_FAILURE;
-        }
-    } else {
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-                 "%s: sme_AcquireGlobalLock error", __func__);
-        vos_mem_free(set_req);
-        status = eHAL_STATUS_FAILURE;
-    }
-    return status;
-}
-
 
 /* ---------------------------------------------------------------------------
     \fn sme_getCachedResults
@@ -14085,8 +13903,7 @@ eHalStatus sme_fatal_event_logs_req(tHalHandle hHal, tANI_U32 is_fatal,
  *
  * Return: tANI_BOOLEAN.
  */
-tANI_BOOLEAN sme_handleSetFccChannel(tHalHandle hHal, tANI_U8 fcc_constraint,
-                                     v_U32_t scan_pending)
+tANI_BOOLEAN sme_handleSetFccChannel(tHalHandle hHal, tANI_U8 fcc_constraint)
 {
     eHalStatus status = eHAL_STATUS_SUCCESS;
     tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
@@ -14096,14 +13913,10 @@ tANI_BOOLEAN sme_handleSetFccChannel(tHalHandle hHal, tANI_U8 fcc_constraint,
     if (eHAL_STATUS_SUCCESS == status &&
                  (!sme_Is11dSupported(hHal)) )
     {
-        pMac->scan.fcc_constraint = !fcc_constraint;
+           pMac->scan.fcc_constraint = !fcc_constraint;
+           /* update the channel list to the firmware */
+           csrUpdateChannelList(pMac);
 
-        if (scan_pending == TRUE) {
-            pMac->scan.defer_update_channel_list = true;
-        } else {
-            /* update the channel list to the firmware */
-            csrUpdateChannelList(pMac);
-        }
     }
 
         sme_ReleaseGlobalLock(&pMac->sme);

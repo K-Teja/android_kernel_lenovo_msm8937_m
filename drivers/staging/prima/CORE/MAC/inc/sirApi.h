@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -143,7 +143,6 @@ typedef tANI_U8 tSirVersionString[SIR_VERSION_STRING_LEN];
 #define WLAN_EXTSCAN_MAX_BUCKETS                  16
 #define WLAN_EXTSCAN_MAX_HOTLIST_APS              128
 #define WLAN_EXTSCAN_MAX_RSSI_SAMPLE_SIZE     8
-#define WLAN_EXTSCAN_MAX_HOTLIST_SSIDS            8
 #endif /* WLAN_FEATURE_EXTSCAN */
 
 #define WLAN_DISA_MAX_PAYLOAD_SIZE                1600
@@ -766,7 +765,7 @@ typedef struct sSirChannelList
 
 typedef struct sSirDFSChannelList
 {
-    v_TIME_t         timeStamp[SIR_MAX_24G_5G_CHANNEL_RANGE];
+    tANI_U32         timeStamp[SIR_MAX_24G_5G_CHANNEL_RANGE];
 
 } tSirDFSChannelList, *tpSirDFSChannelList;
 
@@ -3702,8 +3701,6 @@ typedef enum DFSChanScanType
 #define SIR_COEX_IND_TYPE_CXM_FEATURES_NOTIFICATION (8)
 #define SIR_COEX_IND_TYPE_TDLS_ENABLE  (6)
 #define SIR_COEX_IND_TYPE_TDLS_DISABLE (7)
-#define SIR_COEX_IND_TYPE_HID_CONNECTED_WLAN_CONNECTED_IN_2p4 (9)
-#define SIR_COEX_IND_TYPE_HID_DISCONNECTED_WLAN_CONNECTED_IN_2p4 (10)
 
 typedef struct sSirSmeCoexInd
 {
@@ -3767,12 +3764,6 @@ typedef struct sSirWlanSetRxpFilters
     tANI_U8 configuredMcstBcstFilterSetting;
     tANI_U8 setMcstBcstFilter;
 }tSirWlanSetRxpFilters,*tpSirWlanSetRxpFilters;
-
-
-typedef struct sSirUpdateCfgIntParam
-{
-    tANI_U32 cfgId;
-}tSirUpdateCfgIntParam,*tpSirUpdateCfgIntParam;
 
 typedef struct
 {
@@ -4624,9 +4615,6 @@ typedef struct sAniHandoffReq
     tANI_U8   sessionId;
     tANI_U8   bssid[WNI_CFG_BSSID_LEN];
     tANI_U8   channel;
-#ifndef QCA_WIFI_ISOC
-    tANI_U8   handoff_src;
-#endif
 } tAniHandoffReq, *tpAniHandoffReq;
 
 typedef struct sSirScanOffloadReq {
@@ -5630,22 +5618,6 @@ typedef PACKED_PRE struct PACKED_POST
     tANI_U8 result[1];
 } tSirWifiScanResultEvent, *tpSirWifiScanResultEvent;
 
-/* WLAN_HAL_SSID_HOTLIST_RESULT_IND */
-
-typedef PACKED_PRE struct PACKED_POST
-{
-    tANI_U32             requestId;
-    tANI_BOOLEAN         ssid_found;
-    tANI_U32             numHotlistSsid;     // numbers of SSIDs
-
-    /*
-     * 0 for last fragment
-     * 1 still more fragment(s) coming
-     */
-    tANI_BOOLEAN         moreData;
-    tSirWifiScanResult   ssidHotlist[1];
-} tSirEXTScanSsidHotlistMatch, *tpSirEXTScanSsidHotlistMatch;
-
 typedef PACKED_PRE struct PACKED_POST
 {
     tANI_U8       elemId;       // Element Identifier
@@ -5774,49 +5746,6 @@ typedef PACKED_PRE struct PACKED_POST
     tANI_U32      requestId;
     tANI_U32      status;
 } tSirEXTScanResetBssidHotlistRspParams, *tpSirEXTScanResetBssidHotlistRspParams;
-
-typedef struct
-{
-    tANI_U32      requestId;
-    tANI_U8       sessionId;
-} tSirEXTScanResetSsidHotlistReqParams, *tpSirEXTScanResetSsidHotlistReqParams;
-
-typedef PACKED_PRE struct PACKED_POST
-{
-    tANI_U32      requestId;
-    tANI_U32      status;
-} tSirEXTScanResetSsidHotlistRspParams, *tpSirEXTScanResetSsidHotlistRspParams;
-
-
-/**
- * struct sir_ssid_hotlist_param - param for SSID Hotlist
- * @ssid: SSID which is being hotlisted
- * @band: Band in which the given SSID should be scanned
- * @rssi_low: Low bound on RSSI
- * @rssi_high: High bound on RSSI
- */
-typedef struct
-{
-    tSirMacSSid ssid;
-    tANI_U8 band;
-    tANI_S32 rssi_low;
-    tANI_S32 rssi_high;
-}tSirSsidThresholdParam, *tpSirSsidThresholdParam;
-
-typedef struct
-{
-    tANI_U32 request_id;
-    tANI_U8 session_id;
-    tANI_U32 lost_ssid_sample_size;
-    tANI_U32 ssid_count;
-    tSirSsidThresholdParam ssid[WLAN_EXTSCAN_MAX_HOTLIST_SSIDS];
-}tSirEXTScanSetSsidHotListReqParams, *tpSirEXTScanSetSsidHotListReqParams;
-
-typedef PACKED_PRE struct PACKED_POST
-{
-    tANI_U32      requestId;
-    tANI_U32      status;
-} tSirEXTScanSetSsidHotListRspParams, *tpSirEXTScanSetSsidHotListRspParams;
 
 /*---------------------------------------------------------------------------
  *  * WLAN_HAL_EXTSCAN_RESULT_AVAILABLE_IND
@@ -6110,6 +6039,32 @@ typedef struct {
    tANI_U32  value;
 } tModifyRoamParamsReqParams, * tpModifyRoamParamsReqParams;
 
+
+#ifdef WLAN_FEATURE_LFR_MBB
+
+/**
+ * enum csr_roam_op_code - Operation to be done by the callback.
+ * @SIR_ROAMING_DEREGISTER_STA: Deregister the old STA after roaming.
+ * @SIR_STOP_ROAM_OFFLOAD_SCAN : sends RSO stop
+ * @SIR_PREPARE_REASSOC_REQ: prepares reassoc request
+ */
+enum csr_roam_op_code {
+    SIR_ROAMING_DEREGISTER_STA,
+    SIR_STOP_ROAM_OFFLOAD_SCAN,
+    SIR_PREPARE_REASSOC_REQ,
+};
+
+/**
+ * enum sir_roam_cleanup_type - Type of cleanup needs to be performed.
+ * @SIR_MBB_DISCONNECTED: Entire CSR cleanup for connected AP
+ * needs to be performed
+ * @SIR_MBB_CONNECTED: No need to perform CSR cleanup for connected AP.
+ */
+enum sir_roam_cleanup_type {
+    SIR_MBB_DISCONNECTED,
+    SIR_MBB_CONNECTED,
+};
+#endif
 typedef void(*hdd_conAliveCb)(void *data, bool status);
 
 typedef struct {

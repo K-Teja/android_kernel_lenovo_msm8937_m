@@ -453,7 +453,6 @@ typedef struct
    v_PVOID_t            pWdiContext;             /* WDI context */
    WDA_state            wdaState ;               /* WDA state tracking */ 
    v_PVOID_t            wdaWdiCfgApiMsgParam ;   /* WDI API paramter tracking */
-   v_PVOID_t            wdaWdiCfgUpdateIntMsg ;  /* WDI API CFG update param tracking */
    vos_event_t          wdaWdiEvent;             /* WDI API sync event */
 
    /* Event to wait for tx completion */
@@ -796,6 +795,8 @@ tBssSystemRole wdaGetGlobalSystemRole(tpAniSirGlobal pMac);
 
 #define WLANWDA_HO_IS_AN_AMPDU                    0x4000
 #define WLANWDA_HO_LAST_MPDU_OF_AMPDU             0x400
+
+#define WDA_MAX_MGMT_MPDU_LEN             2000
 
 /* WDA_IS_RX_AN_AMPDU ********************************************************/
 #  define WDA_IS_RX_AN_AMPDU(pRxMeta)       \
@@ -1192,7 +1193,6 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_PER_ROAM_SCAN_TRIGGER_REQ   SIR_HAL_PER_ROAM_SCAN_TRIGGER_REQ
 #define WDA_PER_ROAM_SCAN_TRIGGER_RSP   SIR_HAL_PER_ROAM_SCAN_TRIGGER_RSP
 #endif
-#define WDA_UPDATE_CFG_INT_PARAM    SIR_HAL_UPDATE_CFG_INT_PARAM
 
 #ifdef WLAN_WAKEUP_EVENTS
 #define WDA_WAKE_REASON_IND    SIR_HAL_WAKE_REASON_IND  
@@ -1359,7 +1359,6 @@ eHalStatus WDA_SetRegDomain(void * clientCtxt, v_REGDOMAIN_t regId,
 
 #define WDA_MODIFY_ROAM_PARAMS_IND             SIR_HAL_MODIFY_ROAM_PARAMS_IND
 #define WDA_SET_ALLOWED_ACTION_FRAMES_IND      SIR_HAL_SET_ALLOWED_ACTION_FRAMES
-
 #define WDA_PAUSE_TL_IND                       SIR_HAL_PAUSE_TL_IND
 
 #define HAL_USE_BD_RATE2_FOR_MANAGEMENT_FRAME 0x40 // Bit 6 will be used to control BD rate for Management frames
